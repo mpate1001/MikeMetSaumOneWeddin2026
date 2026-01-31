@@ -16,6 +16,9 @@ on:
       - 'scripts/**'
       - '.github/workflows/sync-zola-data.yml'
 
+permissions:
+  contents: write
+
 jobs:
   sync-data:
     runs-on: ubuntu-latest
