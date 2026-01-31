@@ -6,25 +6,81 @@ Merges RSVP data with Guest List data to add "side" (Relationship To Couple)
 information to each individual guest.
 
 Usage:
-    python parse_rsvps.py                    # Uses today's date
-    python parse_rsvps.py --date 2026-01-31  # Uses specific date
+    python parse_rsvps.py                           # Auto-finds most recent files
+    python parse_rsvps.py --date 2026-01-31         # Uses specific date (legacy format)
+    python parse_rsvps.py --date 2026-01-31_14-30-00  # Uses specific timestamp
 """
 
 import pandas as pd
 import argparse
+import re
 from datetime import datetime
 from pathlib import Path
 
 
-def load_data(data_dir: Path, date_str: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load RSVP and Guest List CSVs for a given date."""
-    rsvps_path = data_dir / "raw" / f"rsvps_{date_str}.csv"
-    guest_list_path = data_dir / "raw" / f"guest_list_{date_str}.csv"
+def find_most_recent_files(data_dir: Path) -> tuple[Path, Path, str]:
+    """
+    Find the most recent RSVP and Guest List files in the raw directory.
 
-    if not rsvps_path.exists():
-        raise FileNotFoundError(f"RSVP file not found: {rsvps_path}")
+    Returns:
+        tuple: (rsvps_path, guest_list_path, timestamp_str)
+    """
+    raw_dir = data_dir / "raw"
+
+    # Find all RSVP files
+    rsvp_files = list(raw_dir.glob("rsvps_*.csv"))
+    if not rsvp_files:
+        raise FileNotFoundError(f"No RSVP files found in {raw_dir}")
+
+    # Sort by modification time (most recent first)
+    rsvp_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+    most_recent_rsvp = rsvp_files[0]
+
+    # Extract timestamp from filename (supports both YYYY-MM-DD and YYYY-MM-DD_HH-MM-SS)
+    # Pattern: rsvps_YYYY-MM-DD.csv or rsvps_YYYY-MM-DD_HH-MM-SS.csv
+    match = re.search(r'rsvps_(\d{4}-\d{2}-\d{2}(?:_\d{2}-\d{2}-\d{2})?)', most_recent_rsvp.name)
+    if not match:
+        raise ValueError(f"Could not parse timestamp from filename: {most_recent_rsvp.name}")
+
+    timestamp_str = match.group(1)
+
+    # Find matching guest list file
+    guest_list_path = raw_dir / f"guest_list_{timestamp_str}.csv"
     if not guest_list_path.exists():
-        raise FileNotFoundError(f"Guest list file not found: {guest_list_path}")
+        # Try to find a guest list file with the same date prefix
+        date_prefix = timestamp_str.split('_')[0]
+        guest_list_candidates = list(raw_dir.glob(f"guest_list_{date_prefix}*.csv"))
+        if guest_list_candidates:
+            guest_list_candidates.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+            guest_list_path = guest_list_candidates[0]
+        else:
+            raise FileNotFoundError(f"Guest list file not found for timestamp: {timestamp_str}")
+
+    print(f"Auto-detected most recent files:")
+    print(f"  RSVP: {most_recent_rsvp.name}")
+    print(f"  Guest List: {guest_list_path.name}")
+
+    return most_recent_rsvp, guest_list_path, timestamp_str
+
+
+def load_data(data_dir: Path, date_str: str = None) -> tuple[pd.DataFrame, pd.DataFrame, str]:
+    """
+    Load RSVP and Guest List CSVs.
+
+    If date_str is None, automatically finds the most recent files.
+    Returns the timestamp string used (for output file naming).
+    """
+    if date_str is None:
+        rsvps_path, guest_list_path, timestamp_str = find_most_recent_files(data_dir)
+    else:
+        rsvps_path = data_dir / "raw" / f"rsvps_{date_str}.csv"
+        guest_list_path = data_dir / "raw" / f"guest_list_{date_str}.csv"
+        timestamp_str = date_str
+
+        if not rsvps_path.exists():
+            raise FileNotFoundError(f"RSVP file not found: {rsvps_path}")
+        if not guest_list_path.exists():
+            raise FileNotFoundError(f"Guest list file not found: {guest_list_path}")
 
     rsvps_df = pd.read_csv(rsvps_path)
     guest_list_df = pd.read_csv(guest_list_path)
@@ -32,7 +88,7 @@ def load_data(data_dir: Path, date_str: str) -> tuple[pd.DataFrame, pd.DataFrame
     print(f"Loaded {len(rsvps_df)} individuals from RSVPs")
     print(f"Loaded {len(guest_list_df)} households from Guest List")
 
-    return rsvps_df, guest_list_df
+    return rsvps_df, guest_list_df, timestamp_str
 
 
 def normalize_name(first: str, last: str) -> str:
@@ -175,8 +231,9 @@ def main():
     parser.add_argument(
         "--date",
         type=str,
-        default=datetime.now().strftime("%Y-%m-%d"),
-        help="Date of data files (YYYY-MM-DD format)"
+        default=None,
+        help="Timestamp of data files (YYYY-MM-DD or YYYY-MM-DD_HH-MM-SS). "
+             "If not specified, automatically uses the most recent files."
     )
     parser.add_argument(
         "--data-dir",
@@ -194,12 +251,15 @@ def main():
         script_dir = Path(__file__).parent
         data_dir = script_dir.parent / "data"
 
-    print(f"Processing data for date: {args.date}")
     print(f"Data directory: {data_dir}")
+    if args.date:
+        print(f"Using specified timestamp: {args.date}")
+    else:
+        print("Auto-detecting most recent files...")
     print()
 
-    # Load data
-    rsvps_df, guest_list_df = load_data(data_dir, args.date)
+    # Load data (returns timestamp_str for output file naming)
+    rsvps_df, guest_list_df, timestamp_str = load_data(data_dir, args.date)
 
     # Build name-to-side mapping
     name_to_side = build_name_to_side_map(guest_list_df)
@@ -210,8 +270,8 @@ def main():
     # Add summary columns
     merged_df = add_summary_columns(merged_df)
 
-    # Save output
-    save_output(merged_df, data_dir, args.date)
+    # Save output with the same timestamp as input files
+    save_output(merged_df, data_dir, timestamp_str)
 
     # Print summary
     print_summary(merged_df)

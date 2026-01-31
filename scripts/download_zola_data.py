@@ -521,9 +521,9 @@ def main():
     data_dir = script_dir.parent / "data"
     download_dir = setup_directories(data_dir)
 
-    # Date string for filenames
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    print(f"Download date: {date_str}")
+    # Date-time string for filenames (e.g., 2026-01-31_14-30-00)
+    date_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    print(f"Download timestamp: {date_str}")
     print(f"Download directory: {download_dir}")
 
     # Check for existing session
