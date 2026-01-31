@@ -152,24 +152,65 @@ def fetch_otp_from_gmail(gmail_email: str, gmail_app_password: str, max_wait_sec
     return None
 
 
-def login_to_zola(page, email: str, zola_password: str, gmail_app_password: str) -> bool:
+def login_to_zola(page, email: str, zola_password: str, gmail_app_password: str, data_dir: Path) -> bool:
     """Login to Zola.com, handling OTP if required."""
     print("Navigating to Zola login page...")
     page.goto(ZOLA_LOGIN_URL)
     page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(2000)
+
+    # Take screenshot of login page for debugging
+    page.screenshot(path=str(data_dir / "debug_1_login_page.png"))
+    print("Screenshot: debug_1_login_page.png")
 
     print("Entering credentials...")
-    # Fill email
-    page.fill('input[name="email"]', email)
-    # Fill password
-    page.fill('input[name="password"]', zola_password)
+    print(f"  Email: {email[:3]}***{email[-10:]}")  # Partial email for debugging
+
+    # Try multiple selectors for email input
+    email_selectors = ['input[name="email"]', 'input[type="email"]', '#email']
+    for selector in email_selectors:
+        try:
+            if page.locator(selector).count() > 0:
+                page.fill(selector, email)
+                print(f"  Filled email with: {selector}")
+                break
+        except:
+            continue
+
+    # Try multiple selectors for password input
+    password_selectors = ['input[name="password"]', 'input[type="password"]', '#password']
+    for selector in password_selectors:
+        try:
+            if page.locator(selector).count() > 0:
+                page.fill(selector, zola_password)
+                print(f"  Filled password with: {selector}")
+                break
+        except:
+            continue
+
+    # Take screenshot after filling credentials
+    page.screenshot(path=str(data_dir / "debug_2_credentials_filled.png"))
+    print("Screenshot: debug_2_credentials_filled.png")
 
     # Click login button
     print("Clicking login button...")
-    page.click('button[type="submit"]')
+    submit_selectors = ['button[type="submit"]', 'button:has-text("Log in")', 'button:has-text("Sign in")']
+    for selector in submit_selectors:
+        try:
+            if page.locator(selector).count() > 0:
+                page.click(selector)
+                print(f"  Clicked: {selector}")
+                break
+        except:
+            continue
 
-    # Wait a moment for page to respond
-    page.wait_for_timeout(3000)
+    # Wait for page to respond
+    page.wait_for_timeout(5000)
+
+    # Take screenshot after login attempt
+    page.screenshot(path=str(data_dir / "debug_3_after_login_click.png"))
+    print(f"Screenshot: debug_3_after_login_click.png")
+    print(f"Current URL: {page.url}")
 
     # Check if OTP is required
     otp_selectors = [
@@ -443,7 +484,7 @@ def main():
 
         try:
             # Login (with OTP handling)
-            if not login_to_zola(page, email, zola_password, gmail_app_password):
+            if not login_to_zola(page, email, zola_password, gmail_app_password, data_dir):
                 browser.close()
                 sys.exit(1)
 

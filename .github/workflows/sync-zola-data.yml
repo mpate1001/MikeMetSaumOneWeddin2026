@@ -73,5 +73,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: debug-screenshots
-          path: data/error_screenshot.png
+          path: |
+            data/error_screenshot.png
+            data/debug_*.png
           if-no-files-found: ignore
