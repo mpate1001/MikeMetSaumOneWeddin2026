@@ -208,8 +208,13 @@ __marimo__/
 
 # Project-specific
 error_screenshot.png
+debug_*.png
 playwright-report/
 test-results/
+
+# Session files (sensitive - never commit!)
+.zola_session.json
+.zola_session.json.b64
 
 # OS
 .DS_Store

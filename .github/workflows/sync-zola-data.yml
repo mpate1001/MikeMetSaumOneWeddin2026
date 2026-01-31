@@ -38,6 +38,7 @@ jobs:
 
       - name: Download Zola data
         env:
+          ZOLA_SESSION: ${{ secrets.ZOLA_SESSION }}
           ZOLA_EMAIL: ${{ secrets.ZOLA_EMAIL }}
           ZOLA_PASSWORD: ${{ secrets.ZOLA_PASSWORD }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}

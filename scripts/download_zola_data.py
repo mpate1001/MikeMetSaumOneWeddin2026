@@ -3,17 +3,22 @@
 Zola Data Downloader
 
 Automates downloading RSVP and Guest List data from Zola.com using Playwright.
-Includes automatic OTP fetching from Gmail.
+Supports persistent sessions to avoid login on each run.
 
 Usage:
+    # First time: Login and save session
+    python download_zola_data.py --save-session
+
+    # Subsequent runs: Use saved session (no login needed)
     python download_zola_data.py
 
-Environment Variables (required):
-    ZOLA_EMAIL         - Your email (used for both Zola login and Gmail OTP)
-    ZOLA_PASSWORD      - Your Zola account password
-    GMAIL_APP_PASSWORD - Your Gmail App Password (16 chars, no spaces)
+Environment Variables:
+    ZOLA_EMAIL         - Your email (for login)
+    ZOLA_PASSWORD      - Your Zola password (for login)
+    GMAIL_APP_PASSWORD - Gmail App Password (for OTP)
+    ZOLA_SESSION       - Base64-encoded session state (for GitHub Actions)
 
-For GitHub Actions, store these as repository secrets.
+For GitHub Actions, store ZOLA_SESSION as a secret after running --save-session locally.
 """
 
 import os
@@ -22,6 +27,9 @@ import imaplib
 import email
 import re
 import time
+import json
+import base64
+import argparse
 from datetime import datetime, timedelta
 from pathlib import Path
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
@@ -35,6 +43,51 @@ TRACK_RSVPS_URL = "https://www.zola.com/wedding/manage/guests/rsvps/overview"
 # Gmail IMAP settings
 GMAIL_IMAP_SERVER = "imap.gmail.com"
 GMAIL_IMAP_PORT = 993
+
+# Session file location
+SESSION_FILE = Path(__file__).parent.parent / "data" / ".zola_session.json"
+
+
+def get_session_from_env() -> dict | None:
+    """Load session state from ZOLA_SESSION environment variable (base64 encoded)."""
+    session_b64 = os.environ.get("ZOLA_SESSION")
+    if session_b64:
+        try:
+            session_json = base64.b64decode(session_b64).decode('utf-8')
+            return json.loads(session_json)
+        except Exception as e:
+            print(f"Warning: Could not decode ZOLA_SESSION: {e}")
+    return None
+
+
+def get_session_from_file() -> dict | None:
+    """Load session state from local file."""
+    if SESSION_FILE.exists():
+        try:
+            with open(SESSION_FILE, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Warning: Could not load session file: {e}")
+    return None
+
+
+def save_session_to_file(storage_state: dict):
+    """Save session state to local file."""
+    SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(SESSION_FILE, 'w') as f:
+        json.dump(storage_state, f)
+    print(f"\nSession saved to: {SESSION_FILE}")
+
+    # Also output base64 for GitHub secret
+    session_b64 = base64.b64encode(json.dumps(storage_state).encode()).decode()
+    print(f"\n{'='*60}")
+    print("COPY THIS VALUE TO GITHUB SECRET 'ZOLA_SESSION':")
+    print('='*60)
+    print(session_b64[:100] + "..." if len(session_b64) > 100 else session_b64)
+    print(f"\n(Full value saved to {SESSION_FILE}.b64)")
+
+    with open(str(SESSION_FILE) + ".b64", 'w') as f:
+        f.write(session_b64)
 
 
 def get_credentials() -> tuple[str, str, str]:
@@ -457,8 +510,11 @@ def download_rsvps(page, download_dir: Path, date_str: str) -> Path | None:
 
 
 def main():
-    # Get credentials (email is used for both Zola and Gmail)
-    email, zola_password, gmail_app_password = get_credentials()
+    # Parse arguments
+    parser = argparse.ArgumentParser(description="Download Zola RSVP data")
+    parser.add_argument("--save-session", action="store_true",
+                        help="Login and save session for future use")
+    args = parser.parse_args()
 
     # Setup directories
     script_dir = Path(__file__).parent
@@ -470,23 +526,68 @@ def main():
     print(f"Download date: {date_str}")
     print(f"Download directory: {download_dir}")
 
+    # Check for existing session
+    session_state = get_session_from_env() or get_session_from_file()
+
+    if session_state and not args.save_session:
+        print("\nUsing saved session (no login required)")
+    else:
+        print("\nNo saved session found - will need to login")
+
     # Launch browser
     with sync_playwright() as p:
         print("\nLaunching browser...")
         browser = p.chromium.launch(
             headless=os.environ.get("HEADLESS", "true").lower() == "true"
         )
-        context = browser.new_context(
-            accept_downloads=True,
-            viewport={"width": 1920, "height": 1080}
-        )
+
+        # Create context with session if available
+        context_options = {
+            "accept_downloads": True,
+            "viewport": {"width": 1920, "height": 1080},
+            "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "locale": "en-US",
+            "timezone_id": "America/New_York",
+        }
+
+        if session_state and not args.save_session:
+            context_options["storage_state"] = session_state
+
+        context = browser.new_context(**context_options)
         page = context.new_page()
 
         try:
-            # Login (with OTP handling)
-            if not login_to_zola(page, email, zola_password, gmail_app_password, data_dir):
-                browser.close()
-                sys.exit(1)
+            # Check if we need to login
+            need_login = args.save_session or not session_state
+
+            if need_login:
+                # Get credentials for login
+                email, zola_password, gmail_app_password = get_credentials()
+
+                # Login (with OTP handling)
+                if not login_to_zola(page, email, zola_password, gmail_app_password, data_dir):
+                    browser.close()
+                    sys.exit(1)
+
+                # Save session if requested
+                if args.save_session:
+                    storage_state = context.storage_state()
+                    save_session_to_file(storage_state)
+                    print("\nSession saved! You can now use this session for automated runs.")
+                    print("Add the ZOLA_SESSION secret to GitHub using the .b64 file content.")
+                    browser.close()
+                    return
+            else:
+                # Verify session is still valid by navigating to a protected page
+                print("Verifying session...")
+                page.goto(GUEST_LIST_URL)
+                page.wait_for_timeout(3000)
+
+                if "login" in page.url.lower():
+                    print("Session expired! Please run with --save-session to create a new one.")
+                    browser.close()
+                    sys.exit(1)
+                print("Session valid!")
 
             # Download Guest List
             guest_list_path = download_guest_list(page, download_dir, date_str)
