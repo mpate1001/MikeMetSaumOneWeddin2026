@@ -20,8 +20,8 @@ interface GuestTableProps {
 function RSVPBadge({ status }: { status: RSVPStatus }) {
   const colors: Record<RSVPStatus, string> = {
     Attending: 'bg-green-100 text-green-800',
-    Declined: 'bg-red-100 text-red-800',
-    'No Response': 'bg-amber-100 text-amber-800',
+    Declined: 'bg-red-100 text-crimson',
+    'No Response': 'bg-slate-100 text-lavender-grey',
     'Not Invited': 'bg-gray-100 text-gray-500',
   };
 
@@ -56,7 +56,7 @@ export function GuestTable({ guests }: GuestTableProps) {
         cell: ({ getValue }) => {
           const value = getValue() as string;
           return (
-            <span className={value === 'Bride' ? 'text-burgundy' : 'text-navy'}>
+            <span className={value === 'Bride' ? 'text-strawberry' : 'text-space-indigo'}>
               {value}
             </span>
           );
@@ -159,7 +159,7 @@ export function GuestTable({ guests }: GuestTableProps) {
         </div>
         <button
           onClick={exportToCSV}
-          className="px-3 py-1 text-sm bg-navy text-cream rounded hover:bg-navy/90 transition-colors"
+          className="px-3 py-1 text-sm bg-space-indigo text-platinum rounded hover:bg-space-indigo/90 transition-colors"
         >
           Export CSV
         </button>
@@ -193,7 +193,7 @@ export function GuestTable({ guests }: GuestTableProps) {
             {table.getRowModel().rows.map((row) => (
               <tr
                 key={row.id}
-                className={`hover:bg-cream/30 ${row.getIsGrouped() ? 'bg-gray-100 font-semibold' : ''}`}
+                className={`hover:bg-platinum/50 ${row.getIsGrouped() ? 'bg-gray-100 font-semibold' : ''}`}
               >
                 {row.getVisibleCells().map((cell) => (
                   <td key={cell.id} className="px-4 py-3 text-sm whitespace-nowrap">

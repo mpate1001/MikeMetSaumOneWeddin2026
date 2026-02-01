@@ -26,6 +26,8 @@ export interface EventStats {
   declined: number;
   noResponse: number;
   notInvited: number;
+  brideAttending: number;
+  groomAttending: number;
 }
 
 export interface SummaryStats {

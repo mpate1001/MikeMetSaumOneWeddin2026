@@ -29,19 +29,30 @@ function getColumnValue(raw: RawGuestData, ...patterns: string[]): string {
 }
 
 function parseGuest(raw: RawGuestData): Guest {
+  // Support both old format and new scraper format
+  const firstName = raw.First_Name || raw['First Name'] || '';
+  const lastName = raw.Last_Name || raw['Last Name'] || '';
+
+  // New format: Side = Bride/Groom, Relationship = relationship type
+  // Old format: Side = relationship type, Bride_or_Groom = Bride/Groom
+  const side = raw.Relationship || raw.Side || 'Unknown';
+  const brideOrGroom = raw.Side === 'Bride' || raw.Side === 'Groom'
+    ? raw.Side
+    : (raw.Bride_or_Groom === 'Bride' || raw.Bride_or_Groom === 'Groom')
+      ? raw.Bride_or_Groom
+      : 'Unknown';
+
   return {
     title: raw.Title || '',
-    firstName: raw['First Name'] || '',
-    lastName: raw['Last Name'] || '',
+    firstName,
+    lastName,
     suffix: raw.Suffix || '',
-    saumyaVidhiHaaldi: parseRSVPStatus(getColumnValue(raw, "Saumya's Vidhi & Haaldi", "saumya")),
-    mahekVidhiHaaldi: parseRSVPStatus(getColumnValue(raw, "Mahek's Vidhi & Haaldi", "mahek")),
-    wedding: parseRSVPStatus(raw.Wedding),
-    reception: parseRSVPStatus(raw.Reception),
-    side: raw.Side || 'Unknown',
-    brideOrGroom: (raw.Bride_or_Groom === 'Bride' || raw.Bride_or_Groom === 'Groom')
-      ? raw.Bride_or_Groom
-      : 'Unknown',
+    saumyaVidhiHaaldi: parseRSVPStatus(getColumnValue(raw, "RSVP_Saumyas_Vidhi_and_Haaldi", "Saumya's Vidhi & Haaldi", "saumya")),
+    mahekVidhiHaaldi: parseRSVPStatus(getColumnValue(raw, "RSVP_Maheks_Vidhi_and_Haaldi", "Mahek's Vidhi & Haaldi", "mahek")),
+    wedding: parseRSVPStatus(getColumnValue(raw, "RSVP_Wedding", "Wedding")),
+    reception: parseRSVPStatus(getColumnValue(raw, "RSVP_Reception", "Reception")),
+    side,
+    brideOrGroom: brideOrGroom as 'Bride' | 'Groom' | 'Unknown',
   };
 }
 
@@ -163,6 +174,8 @@ export function useGuestData() {
       declined: filteredGuests.filter(g => g[key] === 'Declined').length,
       noResponse: filteredGuests.filter(g => g[key] === 'No Response').length,
       notInvited: filteredGuests.filter(g => g[key] === 'Not Invited').length,
+      brideAttending: filteredGuests.filter(g => g[key] === 'Attending' && g.brideOrGroom === 'Bride').length,
+      groomAttending: filteredGuests.filter(g => g[key] === 'Attending' && g.brideOrGroom === 'Groom').length,
     }));
 
     return {

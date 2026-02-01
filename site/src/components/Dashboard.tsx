@@ -21,10 +21,10 @@ export function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-cream flex items-center justify-center">
+      <div className="min-h-screen bg-platinum flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-burgundy mx-auto"></div>
-          <p className="mt-4 text-navy font-medium">Loading guest data...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-strawberry mx-auto"></div>
+          <p className="mt-4 text-space-indigo font-medium">Loading guest data...</p>
         </div>
       </div>
     );
@@ -32,14 +32,14 @@ export function Dashboard() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-cream flex items-center justify-center">
+      <div className="min-h-screen bg-platinum flex items-center justify-center">
         <div className="text-center bg-white p-8 rounded-lg shadow-lg max-w-md">
           <div className="text-crimson text-4xl mb-4">⚠️</div>
-          <h2 className="text-xl font-bold text-navy mb-2">Error Loading Data</h2>
+          <h2 className="text-xl font-bold text-space-indigo mb-2">Error Loading Data</h2>
           <p className="text-gray-600">{error}</p>
           <button
             onClick={() => window.location.reload()}
-            className="mt-4 px-4 py-2 bg-burgundy text-cream rounded hover:bg-burgundy/90"
+            className="mt-4 px-4 py-2 bg-strawberry text-platinum rounded hover:bg-crimson"
           >
             Try Again
           </button>
@@ -49,7 +49,7 @@ export function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-cream">
+    <div className="min-h-screen bg-platinum">
       <Header lastUpdated={lastUpdated} />
 
       <main className="max-w-7xl mx-auto px-4 py-6">
@@ -68,7 +68,7 @@ export function Dashboard() {
         <GuestTable guests={guests} />
       </main>
 
-      <footer className="bg-navy text-cream/60 py-4 mt-8">
+      <footer className="bg-space-indigo text-platinum/60 py-4 mt-8">
         <div className="max-w-7xl mx-auto px-4 text-center text-sm">
           Wedding RSVP Dashboard • Data synced from Zola
         </div>

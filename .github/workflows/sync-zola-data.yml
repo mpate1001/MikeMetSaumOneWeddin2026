@@ -42,10 +42,18 @@ jobs:
         run: |
           python scripts/scrape_zola_guests.py --headless --keep-open 0
 
+      - name: Copy latest data to dashboard
+        run: |
+          # Find the latest non-partial CSV file
+          LATEST_CSV=$(ls -t data/scraped/zola_guests_*.csv | grep -v partial | head -1)
+          echo "Latest CSV: $LATEST_CSV"
+          cp "$LATEST_CSV" site/public/data.csv
+          echo "Copied to site/public/data.csv"
+
       - name: Check for changes
         id: changes
         run: |
-          git add data/scraped/
+          git add data/scraped/ site/public/data.csv
           if git diff --staged --quiet; then
             echo "has_changes=false" >> $GITHUB_OUTPUT
           else
@@ -57,7 +65,7 @@ jobs:
         run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "actions@github.com"
-          git add data/scraped/
+          git add data/scraped/ site/public/data.csv
           git commit -m "Update RSVP data - $(date +'%Y-%m-%d')"
           git push
 
