@@ -151,8 +151,8 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
-# mkdocs documentation
-/site
+# mkdocs documentation (commented out - we use /site for React dashboard)
+# /site
 
 # mypy
 .mypy_cache/
@@ -205,6 +205,11 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Node.js / React (site/)
+site/node_modules/
+site/dist/
+site/.vite/
 
 # Project-specific
 error_screenshot.png

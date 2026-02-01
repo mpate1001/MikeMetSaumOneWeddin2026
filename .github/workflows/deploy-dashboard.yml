@@ -1,0 +1,65 @@
+name: Deploy Dashboard
+
+on:
+  workflow_run:
+    workflows: ["Sync Zola RSVP Data"]
+    types: [completed]
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['site/**']
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: site/package-lock.json
+
+      - name: Copy latest CSV data
+        run: |
+          LATEST_CSV=$(ls -t data/processed/combined_*.csv 2>/dev/null | head -1)
+          if [ -n "$LATEST_CSV" ]; then
+            cp "$LATEST_CSV" site/public/data.csv
+            echo "Copied $LATEST_CSV to site/public/data.csv"
+          else
+            echo "No CSV files found in data/processed/"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: cd site && npm ci
+
+      - name: Build
+        run: cd site && npm run build
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./site/dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
