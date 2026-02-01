@@ -163,6 +163,8 @@ export function useGuestData() {
       declined: filteredGuests.filter(g => g[key] === 'Declined').length,
       noResponse: filteredGuests.filter(g => g[key] === 'No Response').length,
       notInvited: filteredGuests.filter(g => g[key] === 'Not Invited').length,
+      brideAttending: filteredGuests.filter(g => g[key] === 'Attending' && g.brideOrGroom === 'Bride').length,
+      groomAttending: filteredGuests.filter(g => g[key] === 'Attending' && g.brideOrGroom === 'Groom').length,
     }));
 
     return {

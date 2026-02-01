@@ -37,7 +37,7 @@ export function FilterBar({ filters, setFilters, uniqueSides, totalCount, filter
             placeholder="Search by name..."
             value={filters.searchQuery}
             onChange={(e) => setFilters(f => ({ ...f, searchQuery: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-burgundy focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-strawberry focus:border-transparent"
           />
         </div>
 
@@ -49,7 +49,7 @@ export function FilterBar({ filters, setFilters, uniqueSides, totalCount, filter
               onClick={() => setFilters(f => ({ ...f, brideOrGroom: option }))}
               className={`px-4 py-2 text-sm font-medium transition-colors ${
                 filters.brideOrGroom === option
-                  ? 'bg-burgundy text-cream'
+                  ? 'bg-space-indigo text-platinum'
                   : 'bg-white text-gray-700 hover:bg-gray-100'
               }`}
             >
@@ -71,10 +71,10 @@ export function FilterBar({ filters, setFilters, uniqueSides, totalCount, filter
                     : status === 'Declined'
                     ? 'bg-crimson text-white'
                     : status === 'No Response'
-                    ? 'bg-amber-500 text-white'
+                    ? 'bg-lavender-grey text-white'
                     : status === 'Not Invited'
                     ? 'bg-gray-500 text-white'
-                    : 'bg-navy text-cream'
+                    : 'bg-space-indigo text-platinum'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
@@ -87,7 +87,7 @@ export function FilterBar({ filters, setFilters, uniqueSides, totalCount, filter
         <select
           value={filters.side}
           onChange={(e) => setFilters(f => ({ ...f, side: e.target.value }))}
-          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-burgundy focus:border-transparent"
+          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-strawberry focus:border-transparent"
         >
           {uniqueSides.map((side) => (
             <option key={side} value={side}>
@@ -100,7 +100,7 @@ export function FilterBar({ filters, setFilters, uniqueSides, totalCount, filter
         {hasActiveFilters && (
           <button
             onClick={clearFilters}
-            className="px-3 py-2 text-sm text-crimson hover:text-burgundy font-medium"
+            className="px-3 py-2 text-sm text-strawberry hover:text-crimson font-medium"
           >
             Clear Filters
           </button>
@@ -109,7 +109,7 @@ export function FilterBar({ filters, setFilters, uniqueSides, totalCount, filter
 
       {/* Results Count */}
       <div className="mt-3 text-sm text-gray-600">
-        Showing <span className="font-semibold text-navy">{filteredCount}</span> of{' '}
+        Showing <span className="font-semibold text-space-indigo">{filteredCount}</span> of{' '}
         <span className="font-semibold">{totalCount}</span> guests
       </div>
     </div>
