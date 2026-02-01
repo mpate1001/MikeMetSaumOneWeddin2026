@@ -216,6 +216,7 @@ error_screenshot.png
 debug_*.png
 playwright-report/
 test-results/
+data/screenshots/
 
 # Session files (sensitive - never commit!)
 .zola_session.json
