@@ -35,23 +35,18 @@ jobs:
           cache: 'npm'
           cache-dependency-path: site/package-lock.json
 
-      - name: Verify CSV data exists
+      - name: Copy latest CSV data
         run: |
-          # The sync-zola-data workflow already copies latest scrape to site/public/data.csv
-          # Just verify it exists and has data
-          if [ -f "site/public/data.csv" ]; then
+          # Always use the latest scraped CSV directly
+          LATEST_CSV=$(ls -t data/scraped/zola_guests_*.csv 2>/dev/null | grep -v partial | head -1)
+          if [ -n "$LATEST_CSV" ]; then
+            cp "$LATEST_CSV" site/public/data.csv
             LINES=$(wc -l < site/public/data.csv)
-            echo "Found site/public/data.csv with $LINES lines"
+            echo "Copied $LATEST_CSV to site/public/data.csv ($LINES lines)"
           else
-            # Fallback: try to find latest scraped CSV
-            LATEST_CSV=$(ls -t data/scraped/zola_guests_*.csv 2>/dev/null | grep -v partial | head -1)
-            if [ -n "$LATEST_CSV" ]; then
-              cp "$LATEST_CSV" site/public/data.csv
-              echo "Copied $LATEST_CSV to site/public/data.csv"
-            else
-              echo "ERROR: No CSV data found"
-              exit 1
-            fi
+            echo "ERROR: No scraped CSV found in data/scraped/"
+            ls -la data/scraped/ || echo "Directory does not exist"
+            exit 1
           fi
 
       - name: Install dependencies
