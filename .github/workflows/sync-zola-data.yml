@@ -8,14 +8,6 @@ on:
   # Allow manual trigger from GitHub Actions UI
   workflow_dispatch:
 
-  # Also run on push to main (for testing)
-  push:
-    branches:
-      - main
-    paths:
-      - 'scripts/**'
-      - '.github/workflows/sync-zola-data.yml'
-
 permissions:
   contents: write
 
@@ -39,24 +31,21 @@ jobs:
           playwright install chromium
           playwright install-deps chromium
 
-      - name: Download Zola data
+      - name: Restore Zola session
         env:
           ZOLA_SESSION: ${{ secrets.ZOLA_SESSION }}
-          ZOLA_EMAIL: ${{ secrets.ZOLA_EMAIL }}
-          ZOLA_PASSWORD: ${{ secrets.ZOLA_PASSWORD }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          HEADLESS: "true"
         run: |
-          python scripts/download_zola_data.py
+          mkdir -p data
+          echo "$ZOLA_SESSION" | base64 -d > data/.zola_session.json
 
-      - name: Parse and merge data
+      - name: Scrape Zola guest data
         run: |
-          python scripts/parse_rsvps.py
+          python scripts/scrape_zola_guests.py --headless --keep-open 0
 
       - name: Check for changes
         id: changes
         run: |
-          git add data/
+          git add data/scraped/
           if git diff --staged --quiet; then
             echo "has_changes=false" >> $GITHUB_OUTPUT
           else
@@ -68,7 +57,7 @@ jobs:
         run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "actions@github.com"
-          git add data/
+          git add data/scraped/
           git commit -m "Update RSVP data - $(date +'%Y-%m-%d')"
           git push
 
@@ -78,6 +67,7 @@ jobs:
         with:
           name: debug-screenshots
           path: |
-            data/error_screenshot.png
-            data/debug_*.png
+            error_screenshot.png
+            debug_*.png
+            data/screenshots/
           if-no-files-found: ignore
