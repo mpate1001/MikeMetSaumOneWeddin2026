@@ -28,9 +28,40 @@ import json
 import re
 import sys
 import time
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 from playwright.sync_api import sync_playwright, Page, Locator, TimeoutError as PlaywrightTimeout
+
+
+@dataclass
+class FailedGuest:
+    """Track a failed guest scrape attempt."""
+    index: int
+    display_name: str
+    reason: str
+    attempts: int = 1
+
+    def to_dict(self) -> dict:
+        return {
+            'index': self.index,
+            'display_name': self.display_name,
+            'reason': self.reason,
+            'attempts': self.attempts,
+        }
+
+
+@dataclass
+class RetryConfig:
+    """Configuration for retry behavior."""
+    max_immediate_retries: int = 3  # Retries per guest before moving on
+    retry_pass_enabled: bool = True  # Do a final retry pass for all failures
+    retry_pass_max_attempts: int = 2  # Attempts per guest in retry pass
+    base_delay_ms: int = 800  # Base delay between operations
+    retry_delay_multiplier: float = 1.5  # Increase delay on each retry
+    max_acceptable_failures: int = 5  # Fail the run if more than this many guests fail
+    slow_mode_delay_ms: int = 2000  # Delay for retry pass (slower)
 
 # URLs
 GUEST_LIST_URL = "https://www.zola.com/wedding/manage/guests/all"
@@ -545,6 +576,183 @@ def close_modal(page: Page):
     page.wait_for_timeout(500)
 
 
+def ensure_modal_closed(page: Page):
+    """Ensure any open modal is closed before proceeding."""
+    try:
+        modal = page.locator('dialog, [role="dialog"]')
+        if modal.count() > 0:
+            close_modal(page)
+            page.wait_for_timeout(300)
+    except:
+        pass
+
+
+def process_single_guest(
+    page: Page,
+    data_dir: Path,
+    index: int,
+    total: int,
+    retry_config: RetryConfig,
+    attempt: int = 1,
+    is_retry_pass: bool = False
+) -> tuple[Optional[dict], Optional[FailedGuest]]:
+    """
+    Process a single guest with retry logic.
+
+    Returns:
+        tuple: (result_dict or None, FailedGuest or None)
+    """
+    guest_num = index + 1
+
+    # Calculate delay based on attempt number
+    delay_multiplier = retry_config.retry_delay_multiplier ** (attempt - 1)
+    if is_retry_pass:
+        click_delay = int(retry_config.slow_mode_delay_ms * delay_multiplier)
+        between_delay = int(retry_config.slow_mode_delay_ms * 0.5)
+    else:
+        click_delay = int(retry_config.base_delay_ms * delay_multiplier)
+        between_delay = int(retry_config.base_delay_ms * 0.4)
+
+    # Re-fetch the cells in case DOM changed
+    name_cells = page.locator('table tbody tr td:nth-child(2)').all()
+
+    if index >= len(name_cells):
+        return None, FailedGuest(index, f"Guest {guest_num}", "Index out of range", attempt)
+
+    cell = name_cells[index]
+
+    # Get the guest name and relationship from the cell
+    cell_relationship = ''
+    display_name = f"Guest {guest_num}"
+
+    try:
+        cell.wait_for(state="visible", timeout=3000)
+        cell_text = cell.inner_text(timeout=3000) or ''
+
+        if cell_text:
+            lines = [l.strip() for l in cell_text.split('\n') if l.strip()]
+            if lines:
+                display_name = lines[0][:50]
+
+            for line in lines:
+                if line.startswith('(') and line.endswith(')'):
+                    cell_relationship = line[1:-1]
+                    break
+    except Exception as cell_err:
+        pass
+
+    attempt_label = f" (attempt {attempt})" if attempt > 1 else ""
+    retry_label = " [RETRY PASS]" if is_retry_pass else ""
+    print(f"\n[{guest_num}/{total}] {display_name}{attempt_label}{retry_label}")
+
+    try:
+        # Find the clickable name element inside the cell
+        name_elem = cell.locator('.primary-guest-name').first
+
+        if name_elem.count() == 0:
+            name_elem = cell.locator('a, [class*="name"], [class*="guest"]').first
+
+        click_target = name_elem if name_elem.count() > 0 else cell
+
+        # Scroll the element into view first
+        click_target.scroll_into_view_if_needed()
+        page.wait_for_timeout(200)
+
+        # Click to open modal
+        click_target.click(timeout=5000)
+        page.wait_for_timeout(click_delay)
+
+        # Verify modal opened
+        modal = page.locator('dialog, [role="dialog"]')
+        if modal.count() == 0:
+            # Try JavaScript click as fallback
+            print(f"      Modal did not open, trying JS click...")
+            page.wait_for_timeout(300)
+            clicked = page.evaluate('''(rowIndex) => {
+                const rows = document.querySelectorAll('table tbody tr');
+                if (rowIndex >= rows.length) return false;
+                const nameCell = rows[rowIndex].querySelector('td:nth-child(2)');
+                if (!nameCell) return false;
+                const nameElem = nameCell.querySelector('.primary-guest-name') ||
+                                 nameCell.querySelector('[class*="name"]') ||
+                                 nameCell.querySelector('a');
+                if (nameElem) {
+                    nameElem.click();
+                    return true;
+                }
+                nameCell.click();
+                return true;
+            }''', index)
+            page.wait_for_timeout(click_delay)
+            modal = page.locator('dialog, [role="dialog"]')
+
+        if modal.count() == 0:
+            return None, FailedGuest(index, display_name, "Modal did not open", attempt)
+
+        # Scrape data from modal
+        result = scrape_guest_from_modal(page, data_dir, guest_num)
+
+        # Close modal
+        close_modal(page)
+        page.wait_for_timeout(between_delay)
+
+        if result:
+            result['row_index'] = index
+            result['display_name'] = display_name
+            if not result.get('relationship') and cell_relationship:
+                result['relationship'] = cell_relationship
+            print(f"      ✓ Scraped successfully")
+            return result, None
+        else:
+            return None, FailedGuest(index, display_name, "Failed to extract data from modal", attempt)
+
+    except PlaywrightTimeout:
+        ensure_modal_closed(page)
+        return None, FailedGuest(index, display_name, "Timeout", attempt)
+    except Exception as e:
+        ensure_modal_closed(page)
+        return None, FailedGuest(index, display_name, f"Error: {str(e)[:50]}", attempt)
+
+
+def process_guest_with_retries(
+    page: Page,
+    data_dir: Path,
+    index: int,
+    total: int,
+    retry_config: RetryConfig,
+    is_retry_pass: bool = False
+) -> tuple[Optional[dict], Optional[FailedGuest]]:
+    """
+    Process a guest with immediate retries on failure.
+
+    Returns:
+        tuple: (result_dict or None, FailedGuest or None if all retries exhausted)
+    """
+    max_attempts = retry_config.retry_pass_max_attempts if is_retry_pass else retry_config.max_immediate_retries
+
+    for attempt in range(1, max_attempts + 1):
+        result, failure = process_single_guest(
+            page, data_dir, index, total, retry_config, attempt, is_retry_pass
+        )
+
+        if result:
+            return result, None
+
+        if failure and attempt < max_attempts:
+            print(f"      ✗ {failure.reason} - will retry ({attempt}/{max_attempts})")
+            # Ensure modal is closed before retry
+            ensure_modal_closed(page)
+            # Add increasing delay before retry
+            retry_wait = int(retry_config.base_delay_ms * (attempt * 0.5))
+            page.wait_for_timeout(retry_wait)
+        elif failure:
+            failure.attempts = attempt
+            print(f"      ✗ {failure.reason} - exhausted retries ({attempt}/{max_attempts})")
+            return None, failure
+
+    return None, FailedGuest(index, f"Guest {index + 1}", "Unknown failure", max_attempts)
+
+
 def get_all_guest_rows(page: Page) -> list[tuple[str, str]]:
     """
     Get all guest rows from the table.
@@ -627,6 +835,24 @@ def scroll_to_load_all_guests(page: Page) -> int:
     return last_count
 
 
+def save_failed_guests(failed_guests: list[FailedGuest], output_dir: Path, timestamp: str):
+    """Save failed guests to a JSON file for debugging."""
+    if not failed_guests:
+        return
+
+    failed_path = output_dir / f"failed_guests_{timestamp}.json"
+    failed_data = {
+        'timestamp': timestamp,
+        'total_failed': len(failed_guests),
+        'guests': [fg.to_dict() for fg in failed_guests],
+    }
+
+    with open(failed_path, 'w') as f:
+        json.dump(failed_data, f, indent=2)
+
+    print(f"Saved {len(failed_guests)} failed guests to: {failed_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Scrape guest data from Zola")
     parser.add_argument("--headless", action="store_true", help="Run browser in headless mode")
@@ -635,7 +861,19 @@ def main():
     parser.add_argument("--keep-open", type=int, default=5, help="Seconds to keep browser open after completion")
     parser.add_argument("--slow", action="store_true", help="Add extra delays between operations")
     parser.add_argument("--indices", type=str, default="", help="Comma-separated list of specific indices to scrape")
+    parser.add_argument("--max-retries", type=int, default=3, help="Max immediate retries per guest")
+    parser.add_argument("--no-retry-pass", action="store_true", help="Disable final retry pass for failed guests")
+    parser.add_argument("--max-failures", type=int, default=5, help="Max acceptable failures before failing the run")
     args = parser.parse_args()
+
+    # Configure retry behavior
+    retry_config = RetryConfig(
+        max_immediate_retries=args.max_retries,
+        retry_pass_enabled=not args.no_retry_pass,
+        max_acceptable_failures=args.max_failures,
+        base_delay_ms=1500 if args.slow else 800,
+        slow_mode_delay_ms=2500 if args.slow else 2000,
+    )
 
     # Parse specific indices if provided
     target_indices = None
@@ -670,6 +908,7 @@ def main():
         print(f"Starting from guest #{args.start}")
 
     all_results = []
+    failed_guests: list[FailedGuest] = []
 
     with sync_playwright() as p:
         print("\nLaunching browser...")
@@ -721,20 +960,17 @@ def main():
             if args.limit > 0:
                 end_idx = min(start_idx + args.limit, len(name_cells))
 
-            # Determine delay times based on --slow flag
-            click_delay = 1500 if args.slow else 800
-            modal_delay = 1200 if args.slow else 500
-            between_delay = 800 if args.slow else 300
-
             if target_indices:
                 print(f"\nProcessing {len(target_indices)} specific indices: {sorted(target_indices)[:10]}...")
             else:
                 print(f"\nProcessing guests {start_idx + 1} to {end_idx}")
             if args.slow:
                 print("SLOW MODE: Adding extra delays between operations")
+            print(f"Retry config: {retry_config.max_immediate_retries} immediate retries, "
+                  f"retry pass {'enabled' if retry_config.retry_pass_enabled else 'disabled'}")
             print("=" * 60)
 
-            # Process each guest
+            # ===== MAIN PASS =====
             for i in range(start_idx, end_idx):
                 # Skip if not in target indices (when specified)
                 if target_indices and i not in target_indices:
@@ -742,157 +978,112 @@ def main():
 
                 guest_num = i + 1
 
-                # Re-fetch the cells in case DOM changed
-                name_cells = page.locator('table tbody tr td:nth-child(2)').all()
+                result, failure = process_guest_with_retries(
+                    page, data_dir, i, end_idx, retry_config, is_retry_pass=False
+                )
 
-                if i >= len(name_cells):
-                    print(f"\n[{guest_num}] Index out of range, stopping")
-                    break
-
-                cell = name_cells[i]
-
-                # Get the guest name and relationship from the cell
-                # The cell contains: Name (on first line), relationship in parentheses (gray text below)
-                # Example: "Sanket Acharaya\n(Saumya's family friend)\nBhagyashree Acharya"
-                cell_relationship = ''
-                display_name = f"Guest {guest_num}"
-
-                try:
-                    # Wait for cell to be ready
-                    cell.wait_for(state="visible", timeout=2000)
-                    cell_text = cell.inner_text(timeout=2000) or ''
-
-                    if cell_text:
-                        lines = [l.strip() for l in cell_text.split('\n') if l.strip()]
-                        # First line is the primary guest name
-                        if lines:
-                            display_name = lines[0][:50]
-
-                        # Look for relationship in parentheses
-                        for line in lines:
-                            if line.startswith('(') and line.endswith(')'):
-                                cell_relationship = line[1:-1]  # Remove parentheses
-                                break
-                except Exception as cell_err:
-                    print(f"      (cell text error: {str(cell_err)[:30]})")
-
-                print(f"\n[{guest_num}/{end_idx}] {display_name}")
-
-                try:
-                    # Find the clickable name element inside the cell
-                    # The name cell (td:nth-child(2)) contains a .primary-guest-name div
-                    name_elem = cell.locator('.primary-guest-name').first
-
-                    # If no primary-guest-name, try other clickable elements
-                    if name_elem.count() == 0:
-                        name_elem = cell.locator('a, [class*="name"], [class*="guest"]').first
-
-                    # Fall back to clicking the cell itself
-                    click_target = name_elem if name_elem.count() > 0 else cell
-
-                    # Scroll the element into view first
-                    click_target.scroll_into_view_if_needed()
-
-                    if args.slow:
-                        page.wait_for_timeout(500)  # Extra pause before click
-
-                    click_target.click(timeout=5000)
-                    page.wait_for_timeout(click_delay)
-
-                    # Verify modal opened - retry once if slow mode
-                    modal = page.locator('dialog, [role="dialog"]')
-                    if modal.count() == 0:
-                        if args.slow:
-                            # Retry click - try clicking further right in the cell to avoid checkbox
-                            print(f"      Modal did not open, retrying with offset click...")
-                            page.wait_for_timeout(500)
-                            # Use JavaScript to click the name element directly
-                            clicked = page.evaluate('''(rowIndex) => {
-                                const rows = document.querySelectorAll('table tbody tr');
-                                if (rowIndex >= rows.length) return false;
-                                // Get the second cell (name cell, not checkbox cell)
-                                const nameCell = rows[rowIndex].querySelector('td:nth-child(2)');
-                                if (!nameCell) return false;
-                                // Find the primary-guest-name element
-                                const nameElem = nameCell.querySelector('.primary-guest-name') ||
-                                                 nameCell.querySelector('[class*="name"]') ||
-                                                 nameCell.querySelector('a');
-                                if (nameElem) {
-                                    nameElem.click();
-                                    return true;
-                                }
-                                // Fallback: click the name cell itself
-                                nameCell.click();
-                                return true;
-                            }''', i)
-                            page.wait_for_timeout(click_delay)
-                            modal = page.locator('dialog, [role="dialog"]')
-                        if modal.count() == 0:
-                            print(f"      Modal did not open, skipping")
-                            continue
-
-                    # Scrape data from modal
-                    result = scrape_guest_from_modal(page, data_dir, guest_num)
-
-                    if result:
-                        result['row_index'] = i
-                        result['display_name'] = display_name
-                        # Use relationship from table cell as fallback
-                        if not result.get('relationship') and cell_relationship:
-                            result['relationship'] = cell_relationship
-                        all_results.append(result)
-                        print(f"      ✓ Scraped successfully")
-                    else:
-                        print(f"      ✗ Failed to scrape")
-
-                    # Close modal
-                    close_modal(page)
-                    page.wait_for_timeout(between_delay)
-
-                except PlaywrightTimeout:
-                    print(f"      ✗ Timeout")
-                    close_modal(page)
-                except Exception as e:
-                    print(f"      ✗ Error: {str(e)[:50]}")
-                    close_modal(page)
+                if result:
+                    all_results.append(result)
+                elif failure:
+                    failed_guests.append(failure)
 
                 # Progress update every 25 guests
                 if guest_num % 25 == 0:
                     print(f"\n{'='*60}")
-                    print(f"Progress: {guest_num}/{end_idx} guests ({len(all_results)} successful)")
+                    print(f"Progress: {guest_num}/{end_idx} guests "
+                          f"({len(all_results)} successful, {len(failed_guests)} failed)")
                     print(f"{'='*60}")
 
                     # Save intermediate results
                     if all_results:
                         save_results(all_results, output_dir / f"zola_guests_{timestamp}_partial.csv")
 
+            # ===== RETRY PASS =====
+            if failed_guests and retry_config.retry_pass_enabled:
+                print("\n" + "=" * 60)
+                print(f"RETRY PASS: {len(failed_guests)} guests to retry")
+                print("=" * 60)
+
+                # Refresh the page before retry pass to ensure clean state
+                print("Refreshing page for retry pass...")
+                page.reload()
+                page.wait_for_load_state("networkidle")
+                page.wait_for_timeout(3000)
+
+                # Scroll to load all guests again
+                scroll_to_load_all_guests(page)
+
+                still_failed: list[FailedGuest] = []
+
+                for fg in failed_guests:
+                    result, failure = process_guest_with_retries(
+                        page, data_dir, fg.index, end_idx, retry_config, is_retry_pass=True
+                    )
+
+                    if result:
+                        all_results.append(result)
+                        print(f"      ✓ Retry successful for {fg.display_name}")
+                    elif failure:
+                        failure.attempts += fg.attempts  # Add previous attempts
+                        still_failed.append(failure)
+
+                failed_guests = still_failed
+                print(f"\nRetry pass complete: {len(failed_guests)} guests still failed")
+
             # Save final results
             print("\n" + "=" * 60)
             print("SCRAPING COMPLETE")
             print("=" * 60)
 
+            total_attempted = end_idx - start_idx
+            if target_indices:
+                total_attempted = len(target_indices)
+
             if all_results:
                 save_results(all_results, output_path)
-                print(f"\nSuccessfully scraped: {len(all_results)}/{end_idx - start_idx} guests")
+                print(f"\nSuccessfully scraped: {len(all_results)}/{total_attempted} guests")
             else:
                 print("\nNo results to save!")
+
+            # Save and report failed guests
+            if failed_guests:
+                save_failed_guests(failed_guests, output_dir, timestamp)
+                print(f"\n⚠ FAILED GUESTS ({len(failed_guests)}):")
+                for fg in failed_guests:
+                    print(f"   [{fg.index + 1}] {fg.display_name}: {fg.reason} (attempts: {fg.attempts})")
 
             # Keep browser open for inspection
             if not args.headless and args.keep_open > 0:
                 print(f"\nBrowser will stay open for {args.keep_open} seconds...")
                 time.sleep(args.keep_open)
 
+            # Determine exit code
+            if len(failed_guests) > retry_config.max_acceptable_failures:
+                print(f"\n❌ FAILURE: {len(failed_guests)} guests failed "
+                      f"(max acceptable: {retry_config.max_acceptable_failures})")
+                browser.close()
+                sys.exit(1)
+            elif failed_guests:
+                print(f"\n⚠ WARNING: {len(failed_guests)} guests failed, "
+                      f"but within acceptable threshold")
+            else:
+                print(f"\n✓ SUCCESS: All guests scraped successfully")
+
         except KeyboardInterrupt:
             print("\n\nInterrupted by user")
             if all_results:
                 interrupted_path = output_dir / f"zola_guests_{timestamp}_interrupted.csv"
                 save_results(all_results, interrupted_path)
+            if failed_guests:
+                save_failed_guests(failed_guests, output_dir, timestamp)
         except Exception as e:
             print(f"\nERROR: {e}")
             save_screenshot(page, data_dir, "error_screenshot")
             if all_results:
                 error_path = output_dir / f"zola_guests_{timestamp}_error.csv"
                 save_results(all_results, error_path)
+            if failed_guests:
+                save_failed_guests(failed_guests, output_dir, timestamp)
             raise
         finally:
             print("\nClosing browser...")
