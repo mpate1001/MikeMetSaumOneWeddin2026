@@ -15,6 +15,9 @@ import type { Guest, RSVPStatus } from '../types/guest';
 
 interface GuestTableProps {
   guests: Guest[];
+  title?: string;
+  showSearch?: boolean;
+  accentColor?: 'strawberry' | 'space-indigo';
 }
 
 function RSVPBadge({ status, compact = false }: { status: RSVPStatus; compact?: boolean }) {
@@ -80,9 +83,33 @@ function GuestCard({ guest }: { guest: Guest }) {
   );
 }
 
-export function GuestTable({ guests }: GuestTableProps) {
+export function GuestTable({ guests, title, showSearch = false, accentColor }: GuestTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [grouping, setGrouping] = useState<GroupingState>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [rsvpFilter, setRsvpFilter] = useState<RSVPStatus | 'All'>('All');
+
+  // Filter guests based on search and RSVP filter
+  const filteredGuests = useMemo(() => {
+    return guests.filter((guest) => {
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const fullName = `${guest.firstName} ${guest.lastName}`.toLowerCase();
+        const relationship = guest.side.toLowerCase();
+        if (!fullName.includes(query) && !relationship.includes(query)) {
+          return false;
+        }
+      }
+
+      // RSVP filter (based on wedding event)
+      if (rsvpFilter !== 'All' && guest.wedding !== rsvpFilter) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [guests, searchQuery, rsvpFilter]);
 
   const columns = useMemo<ColumnDef<Guest>[]>(
     () => [
@@ -139,7 +166,7 @@ export function GuestTable({ guests }: GuestTableProps) {
   );
 
   const table = useReactTable({
-    data: guests,
+    data: filteredGuests,
     columns,
     state: {
       sorting,
@@ -161,7 +188,7 @@ export function GuestTable({ guests }: GuestTableProps) {
 
   const exportToCSV = () => {
     const headers = ['Title', 'First Name', 'Last Name', 'Suffix', 'Side', 'Relationship', "Saumya's V&H", "Mahek's V&H", 'Wedding', 'Reception'];
-    const rows = guests.map(g => [
+    const rows = filteredGuests.map(g => [
       g.title,
       g.firstName,
       g.lastName,
@@ -183,7 +210,7 @@ export function GuestTable({ guests }: GuestTableProps) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `guest-list-export-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `guest-list-${title?.toLowerCase().replace(/\s+/g, '-') || 'export'}-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -191,124 +218,220 @@ export function GuestTable({ guests }: GuestTableProps) {
   // Get paginated guests for mobile card view
   const paginatedGuests = table.getRowModel().rows.map(row => row.original);
 
+  // Accent color classes
+  const accentClasses = {
+    title: accentColor === 'strawberry' ? 'text-strawberry' : 'text-space-indigo',
+    border: accentColor === 'strawberry' ? 'border-strawberry' : 'border-space-indigo',
+    bg: accentColor === 'strawberry' ? 'bg-strawberry' : 'bg-space-indigo',
+  };
+
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden">
-      {/* Table Header */}
-      <div className="px-4 py-3 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-600 hidden sm:inline">Group by:</label>
-          <select
-            value={grouping[0] || ''}
-            onChange={(e) => setGrouping(e.target.value ? [e.target.value] : [])}
-            className="px-2 py-1 text-sm border border-gray-300 rounded"
-          >
-            <option value="">None</option>
-            <option value="brideOrGroom">Side</option>
-            <option value="side">Relationship</option>
-            <option value="wedding">Wedding RSVP</option>
-          </select>
+      {/* Table Header with Title, Search, and Controls */}
+      <div className={`px-4 py-4 border-b border-gray-200 ${accentColor ? `border-l-4 ${accentClasses.border}` : ''}`}>
+        {/* Title Row */}
+        {title && (
+          <div className="flex items-center justify-between mb-3">
+            <h2 className={`text-lg font-bold ${accentClasses.title}`}>
+              {title}
+              <span className="ml-2 text-sm font-normal text-gray-500">
+                ({filteredGuests.length} {filteredGuests.length === 1 ? 'guest' : 'guests'})
+              </span>
+            </h2>
+            <button
+              onClick={exportToCSV}
+              className={`px-3 py-1 text-sm ${accentClasses.bg} text-platinum rounded hover:opacity-90 transition-colors`}
+            >
+              Export CSV
+            </button>
+          </div>
+        )}
+
+        {/* Search and Filter Row */}
+        <div className="flex flex-wrap items-center gap-3">
+          {showSearch && (
+            <div className="flex-1 min-w-[200px]">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search by name or relationship..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-space-indigo/20 focus:border-space-indigo outline-none"
+                />
+                <svg
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {showSearch && (
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-600 whitespace-nowrap">RSVP:</label>
+              <select
+                value={rsvpFilter}
+                onChange={(e) => setRsvpFilter(e.target.value as RSVPStatus | 'All')}
+                className="px-2 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-space-indigo/20 focus:border-space-indigo outline-none"
+              >
+                <option value="All">All</option>
+                <option value="Attending">Attending</option>
+                <option value="Declined">Declined</option>
+                <option value="No Response">No Response</option>
+              </select>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600 whitespace-nowrap hidden sm:inline">Group:</label>
+            <select
+              value={grouping[0] || ''}
+              onChange={(e) => setGrouping(e.target.value ? [e.target.value] : [])}
+              className="px-2 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-space-indigo/20 focus:border-space-indigo outline-none"
+            >
+              <option value="">None</option>
+              <option value="brideOrGroom">Side</option>
+              <option value="side">Relationship</option>
+              <option value="wedding">Wedding RSVP</option>
+            </select>
+          </div>
+
+          {!title && (
+            <button
+              onClick={exportToCSV}
+              className="px-3 py-2 text-sm bg-space-indigo text-platinum rounded-lg hover:bg-space-indigo/90 transition-colors"
+            >
+              Export CSV
+            </button>
+          )}
         </div>
-        <button
-          onClick={exportToCSV}
-          className="px-3 py-1 text-sm bg-space-indigo text-platinum rounded hover:bg-space-indigo/90 transition-colors"
-        >
-          Export CSV
-        </button>
       </div>
 
       {/* Mobile Card View */}
       <div className="md:hidden">
-        {paginatedGuests.map((guest, idx) => (
-          <GuestCard key={`${guest.firstName}-${guest.lastName}-${idx}`} guest={guest} />
-        ))}
+        {paginatedGuests.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">
+            No guests found matching your search.
+          </div>
+        ) : (
+          paginatedGuests.map((guest, idx) => (
+            <GuestCard key={`${guest.firstName}-${guest.lastName}-${idx}`} guest={guest} />
+          ))
+        )}
       </div>
 
       {/* Desktop Table View */}
       <div className="hidden md:block overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50">
-            {table.getHeaderGroups().map((headerGroup) => (
-              <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <th
-                    key={header.id}
-                    className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={header.column.getToggleSortingHandler()}
-                  >
-                    <div className="flex items-center gap-1">
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                      {{
-                        asc: ' ↑',
-                        desc: ' ↓',
-                      }[header.column.getIsSorted() as string] ?? null}
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {table.getRowModel().rows.map((row) => (
-              <tr
-                key={row.id}
-                className={`hover:bg-platinum/50 ${row.getIsGrouped() ? 'bg-gray-100 font-semibold' : ''}`}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="px-4 py-3 text-sm whitespace-nowrap">
-                    {cell.getIsGrouped() ? (
-                      <>
-                        <button
-                          onClick={row.getToggleExpandedHandler()}
-                          className="mr-2"
-                        >
-                          {row.getIsExpanded() ? '▼' : '▶'}
-                        </button>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())} ({row.subRows.length})
-                      </>
-                    ) : cell.getIsAggregated() ? null : cell.getIsPlaceholder() ? null : (
-                      flexRender(cell.column.columnDef.cell, cell.getContext())
-                    )}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {filteredGuests.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">
+            No guests found matching your search.
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              {table.getHeaderGroups().map((headerGroup) => (
+                <tr key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <th
+                      key={header.id}
+                      className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                      onClick={header.column.getToggleSortingHandler()}
+                    >
+                      <div className="flex items-center gap-1">
+                        {flexRender(header.column.columnDef.header, header.getContext())}
+                        {{
+                          asc: ' ↑',
+                          desc: ' ↓',
+                        }[header.column.getIsSorted() as string] ?? null}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {table.getRowModel().rows.map((row) => (
+                <tr
+                  key={row.id}
+                  className={`hover:bg-platinum/50 ${row.getIsGrouped() ? 'bg-gray-100 font-semibold' : ''}`}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} className="px-4 py-3 text-sm whitespace-nowrap">
+                      {cell.getIsGrouped() ? (
+                        <>
+                          <button
+                            onClick={row.getToggleExpandedHandler()}
+                            className="mr-2"
+                          >
+                            {row.getIsExpanded() ? '▼' : '▶'}
+                          </button>
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())} ({row.subRows.length})
+                        </>
+                      ) : cell.getIsAggregated() ? null : cell.getIsPlaceholder() ? null : (
+                        flexRender(cell.column.columnDef.cell, cell.getContext())
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* Pagination */}
-      <div className="px-4 py-3 border-t border-gray-200 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-            className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+      {filteredGuests.length > 0 && (
+        <div className="px-4 py-3 border-t border-gray-200 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+              className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+            >
+              Prev
+            </button>
+            <button
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+              className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+            >
+              Next
+            </button>
+          </div>
+          <span className="text-sm text-gray-600">
+            Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+          </span>
+          <select
+            value={table.getState().pagination.pageSize}
+            onChange={(e) => table.setPageSize(Number(e.target.value))}
+            className="px-2 py-1 text-sm border rounded"
           >
-            Prev
-          </button>
-          <button
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-            className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-          >
-            Next
-          </button>
+            {[25, 50, 100, 200].map((size) => (
+              <option key={size} value={size}>
+                {size} per page
+              </option>
+            ))}
+          </select>
         </div>
-        <span className="text-sm text-gray-600">
-          {table.getState().pagination.pageIndex + 1} / {table.getPageCount()}
-        </span>
-        <select
-          value={table.getState().pagination.pageSize}
-          onChange={(e) => table.setPageSize(Number(e.target.value))}
-          className="px-2 py-1 text-sm border rounded"
-        >
-          {[25, 50, 100, 200].map((size) => (
-            <option key={size} value={size}>
-              {size}
-            </option>
-          ))}
-        </select>
-      </div>
+      )}
     </div>
   );
 }

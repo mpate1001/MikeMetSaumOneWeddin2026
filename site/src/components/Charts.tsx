@@ -23,7 +23,7 @@ const COLORS = {
   declined: '#D80032',   // Classic Crimson
   noResponse: '#8D99AE', // Lavender Grey
   notInvited: '#6b7280', // gray-500
-  bride: '#EF233C',      // Strawberry Red
+  bride: '#990000',      // Deep Red
   groom: '#2B2D42',      // Space Indigo
 };
 
