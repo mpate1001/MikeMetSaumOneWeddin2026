@@ -4,7 +4,7 @@ Utility functions for formatting phone numbers and validating addresses.
 
 import os
 import re
-import xml.etree.ElementTree as ET
+import time
 from typing import Optional
 import phonenumbers
 import requests
@@ -67,22 +67,97 @@ def format_phone_number(phone: str, default_region: str = "US") -> str:
         return phone
 
 
+def get_usps_oauth_token(consumer_key: str, consumer_secret: str) -> Optional[str]:
+    """
+    Get OAuth access token from USPS API.
+
+    Args:
+        consumer_key: USPS Consumer Key
+        consumer_secret: USPS Consumer Secret
+
+    Returns:
+        Access token string, or None if failed
+    """
+    try:
+        # USPS OAuth uses client credentials in body (not Basic Auth header)
+        # Base URL is apis.usps.com (with 's'), not api.usps.com
+        response = requests.post(
+            'https://apis.usps.com/oauth2/v3/token',
+            data={
+                'grant_type': 'client_credentials',
+                'client_id': consumer_key,
+                'client_secret': consumer_secret,
+                'scope': 'addresses',
+            },
+            headers={
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            timeout=10
+        )
+
+        response.raise_for_status()
+        data = response.json()
+        return data.get('access_token')
+    except requests.RequestException as e:
+        # Try to get more details from response
+        error_detail = ""
+        if hasattr(e, 'response') and e.response is not None:
+            try:
+                error_detail = f" - {e.response.text[:100]}"
+            except:
+                pass
+        print(f"      USPS OAuth error: {str(e)[:60]}{error_detail}")
+        return None
+    except Exception as e:
+        print(f"      USPS OAuth unexpected error: {str(e)[:50]}")
+        return None
+
+
+# Cache the token to avoid getting a new one for each address
+_usps_token_cache = {
+    'token': None,
+    'expires_at': 0
+}
+
+
+def get_cached_usps_token() -> Optional[str]:
+    """Get USPS token, using cache if valid."""
+    consumer_key = os.environ.get('USPS_CONSUMER_KEY')
+    consumer_secret = os.environ.get('USPS_CONSUMER_SECRET')
+
+    if not consumer_key or not consumer_secret:
+        return None
+
+    # Check if cached token is still valid (with 60s buffer)
+    if _usps_token_cache['token'] and time.time() < _usps_token_cache['expires_at'] - 60:
+        return _usps_token_cache['token']
+
+    # Get new token
+    token = get_usps_oauth_token(consumer_key, consumer_secret)
+    if token:
+        # USPS tokens typically last 1 hour (3600 seconds)
+        _usps_token_cache['token'] = token
+        _usps_token_cache['expires_at'] = time.time() + 3600
+
+    return token
+
+
 def validate_address_usps(
     street: str,
     city: str,
     state: str,
     zip_code: str,
-    usps_user_id: Optional[str] = None
 ) -> dict:
     """
-    Validate and standardize a US address using USPS Web Tools API.
+    Validate and standardize a US address using USPS Addresses API (OAuth).
+
+    Requires USPS_CONSUMER_KEY and USPS_CONSUMER_SECRET environment variables.
 
     Args:
         street: Street address (e.g., "123 Main St")
         city: City name
         state: State code (e.g., "CA", "NY")
         zip_code: ZIP code (5 or 9 digits)
-        usps_user_id: USPS Web Tools User ID (or set USPS_USER_ID env var)
 
     Returns:
         dict with keys:
@@ -95,81 +170,68 @@ def validate_address_usps(
             - zip4: 4-digit ZIP extension (if available)
             - error: error message (if invalid)
     """
-    user_id = usps_user_id or os.environ.get('USPS_USER_ID')
+    fallback_address = f"{street}, {city}, {state} {zip_code}".strip(', ')
 
-    if not user_id:
+    # Get OAuth token
+    token = get_cached_usps_token()
+    if not token:
         return {
             'valid': False,
-            'error': 'USPS_USER_ID not configured',
-            'address': f"{street}, {city}, {state} {zip_code}".strip(', ')
+            'error': 'USPS credentials not configured or token failed',
+            'address': fallback_address
         }
 
-    # Build the XML request
-    xml_request = f"""<?xml version="1.0" encoding="UTF-8"?>
-<AddressValidateRequest USERID="{user_id}">
-    <Revision>1</Revision>
-    <Address ID="0">
-        <Address1></Address1>
-        <Address2>{street}</Address2>
-        <City>{city}</City>
-        <State>{state}</State>
-        <Zip5>{zip_code[:5] if zip_code else ''}</Zip5>
-        <Zip4>{zip_code[6:10] if len(zip_code) > 5 else ''}</Zip4>
-    </Address>
-</AddressValidateRequest>"""
-
     try:
+        # Build query parameters for the Addresses API
+        params = {
+            'streetAddress': street,
+            'city': city,
+            'state': state,
+        }
+        if zip_code:
+            params['ZIPCode'] = zip_code[:5]
+
         response = requests.get(
-            'https://secure.shippingapis.com/ShippingAPI.dll',
-            params={
-                'API': 'Verify',
-                'XML': xml_request
+            'https://apis.usps.com/addresses/v3/address',
+            params=params,
+            headers={
+                'Authorization': f'Bearer {token}',
+                'Accept': 'application/json',
             },
             timeout=10
         )
+
+        # Handle different response codes
+        if response.status_code == 404:
+            return {
+                'valid': False,
+                'error': 'Address not found',
+                'address': fallback_address
+            }
+
+        if response.status_code == 400:
+            error_data = response.json() if response.text else {}
+            error_msg = error_data.get('error', {}).get('message', 'Invalid request')
+            return {
+                'valid': False,
+                'error': error_msg,
+                'address': fallback_address
+            }
+
         response.raise_for_status()
+        data = response.json()
 
-        # Parse the XML response
-        root = ET.fromstring(response.text)
+        # Extract the address from response
+        addr = data.get('address', {})
 
-        # Check for errors
-        error = root.find('.//Error')
-        if error is not None:
-            error_desc = error.find('Description')
-            return {
-                'valid': False,
-                'error': error_desc.text if error_desc is not None else 'Unknown error',
-                'address': f"{street}, {city}, {state} {zip_code}".strip(', ')
-            }
+        validated_street = addr.get('streetAddress', street)
+        if addr.get('secondaryAddress'):
+            validated_street += f", {addr['secondaryAddress']}"
 
-        # Extract validated address
-        address = root.find('.//Address')
-        if address is None:
-            return {
-                'valid': False,
-                'error': 'No address in response',
-                'address': f"{street}, {city}, {state} {zip_code}".strip(', ')
-            }
-
-        # USPS returns Address2 as the street address (Address1 is apt/suite)
-        addr1 = address.find('Address1')
-        addr2 = address.find('Address2')
-        city_elem = address.find('City')
-        state_elem = address.find('State')
-        zip5 = address.find('Zip5')
-        zip4 = address.find('Zip4')
-
-        street_parts = []
-        if addr2 is not None and addr2.text:
-            street_parts.append(addr2.text)
-        if addr1 is not None and addr1.text:
-            street_parts.append(addr1.text)
-
-        validated_street = ', '.join(street_parts)
-        validated_city = city_elem.text if city_elem is not None else city
-        validated_state = state_elem.text if state_elem is not None else state
-        validated_zip5 = zip5.text if zip5 is not None else zip_code[:5]
-        validated_zip4 = zip4.text if zip4 is not None and zip4.text else ''
+        validated_city = addr.get('city', city)
+        validated_state = addr.get('state', state)
+        validated_zip5 = addr.get('ZIPCode', zip_code[:5] if zip_code else '')
+        validated_zip4 = addr.get('ZIPPlus4', '')
 
         # Build the full ZIP
         full_zip = validated_zip5
@@ -193,14 +255,19 @@ def validate_address_usps(
         return {
             'valid': False,
             'error': f'Request failed: {str(e)}',
-            'address': f"{street}, {city}, {state} {zip_code}".strip(', ')
+            'address': fallback_address
         }
-    except ET.ParseError as e:
+    except (KeyError, ValueError) as e:
         return {
             'valid': False,
-            'error': f'XML parse error: {str(e)}',
-            'address': f"{street}, {city}, {state} {zip_code}".strip(', ')
+            'error': f'Parse error: {str(e)}',
+            'address': fallback_address
         }
+
+
+def is_usps_configured() -> bool:
+    """Check if USPS API credentials are configured."""
+    return bool(os.environ.get('USPS_CONSUMER_KEY') and os.environ.get('USPS_CONSUMER_SECRET'))
 
 
 def format_address(
@@ -211,13 +278,13 @@ def format_address(
     zip_code: str = "",
     country: str = "",
     validate_us: bool = True,
-    usps_user_id: Optional[str] = None
 ) -> str:
     """
     Format and optionally validate an address.
 
     For US addresses (country is empty, "US", "USA", or "United States"),
     will attempt USPS validation if enabled and credentials available.
+    Requires USPS_CONSUMER_KEY and USPS_CONSUMER_SECRET env vars.
 
     For international addresses, returns a formatted string without validation.
 
@@ -229,7 +296,6 @@ def format_address(
         zip_code: ZIP/postal code
         country: Country name
         validate_us: Whether to validate US addresses via USPS
-        usps_user_id: USPS User ID (or set USPS_USER_ID env var)
 
     Returns:
         Formatted address string
@@ -244,13 +310,12 @@ def format_address(
         full_street = f"{full_street}, {apt.strip()}"
 
     # Try USPS validation for US addresses
-    if is_us and validate_us and full_street and (city or zip_code):
+    if is_us and validate_us and is_usps_configured() and full_street and (city or zip_code):
         result = validate_address_usps(
             street=full_street,
             city=city or "",
             state=state or "",
             zip_code=zip_code or "",
-            usps_user_id=usps_user_id
         )
         if result.get('valid'):
             return result['address']

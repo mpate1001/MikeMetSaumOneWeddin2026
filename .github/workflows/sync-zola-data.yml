@@ -51,20 +51,22 @@ jobs:
       - name: Scrape Zola guest data (Full Run)
         if: ${{ github.event.inputs.run_mode != 'retry-failed' }}
         env:
-          USPS_USER_ID: ${{ secrets.USPS_USER_ID }}
+          USPS_CONSUMER_KEY: ${{ secrets.USPS_CONSUMER_KEY }}
+          USPS_CONSUMER_SECRET: ${{ secrets.USPS_CONSUMER_SECRET }}
         run: |
           echo "Running FULL scrape..."
-          if [ -n "$USPS_USER_ID" ]; then
+          if [ -n "$USPS_CONSUMER_KEY" ] && [ -n "$USPS_CONSUMER_SECRET" ]; then
             echo "USPS address validation enabled"
           else
-            echo "USPS address validation disabled (no USPS_USER_ID secret)"
+            echo "USPS address validation disabled (missing USPS credentials)"
           fi
           python scripts/scrape_zola_guests.py --headless --keep-open 0
 
       - name: Scrape Zola guest data (Retry Failed)
         if: ${{ github.event.inputs.run_mode == 'retry-failed' }}
         env:
-          USPS_USER_ID: ${{ secrets.USPS_USER_ID }}
+          USPS_CONSUMER_KEY: ${{ secrets.USPS_CONSUMER_KEY }}
+          USPS_CONSUMER_SECRET: ${{ secrets.USPS_CONSUMER_SECRET }}
         run: |
           echo "Running RETRY-FAILED scrape..."
           python scripts/scrape_zola_guests.py --headless --keep-open 0 --from-failed-log

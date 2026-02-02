@@ -196,8 +196,10 @@ In GitHub repository settings, add:
   cat data/.zola_session.json | base64
   ```
 
-- `USPS_USER_ID` (optional): USPS Web Tools User ID for address validation
-  - Register free at: https://www.usps.com/business/web-tools-apis/
+- `USPS_CONSUMER_KEY` (optional): USPS API Consumer Key for address validation
+- `USPS_CONSUMER_SECRET` (optional): USPS API Consumer Secret
+  - Register free at: https://developers.usps.com/
+  - Create an app and select the "Addresses" API
   - If not set, addresses are formatted but not validated
 
 ## Phone & Address Formatting

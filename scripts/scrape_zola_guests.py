@@ -474,8 +474,8 @@ def extract_contact_info_from_modal(page: Page) -> dict:
         contact['country'] = country
 
         # Format and optionally validate address
-        # USPS validation is enabled if USPS_USER_ID env var is set
-        usps_user_id = os.environ.get('USPS_USER_ID')
+        # USPS validation is enabled if USPS_CONSUMER_KEY and USPS_CONSUMER_SECRET are set
+        usps_configured = bool(os.environ.get('USPS_CONSUMER_KEY') and os.environ.get('USPS_CONSUMER_SECRET'))
         contact['address'] = format_address(
             street=street,
             apt=apt,
@@ -483,15 +483,14 @@ def extract_contact_info_from_modal(page: Page) -> dict:
             state=state,
             zip_code=zip_code,
             country=country,
-            validate_us=bool(usps_user_id),
-            usps_user_id=usps_user_id
+            validate_us=usps_configured,
         )
 
         print(f"      Email: {contact['email'] or '(none)'}")
         print(f"      Phone: {contact['phone'] or '(none)'}" + (f" (raw: {raw_phone})" if raw_phone != contact['phone'] and raw_phone else ""))
         if contact['address']:
             addr_display = contact['address'][:40] + '...' if len(contact['address']) > 40 else contact['address']
-            validated_note = " [USPS]" if usps_user_id else ""
+            validated_note = " [USPS]" if usps_configured else ""
             print(f"      Address: {addr_display}{validated_note}")
         else:
             print(f"      Address: (none)")
