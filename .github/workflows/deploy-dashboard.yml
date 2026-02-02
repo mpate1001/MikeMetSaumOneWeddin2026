@@ -20,6 +20,8 @@ concurrency:
 
 jobs:
   build-and-deploy:
+    # Only run if triggered manually, by push, or if the sync workflow succeeded
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -27,6 +29,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Ensure latest commit (for workflow_run trigger)
+        if: github.event_name == 'workflow_run'
+        run: |
+          git fetch origin main
+          git reset --hard origin/main
+          echo "Checked out latest commit: $(git rev-parse HEAD)"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
