@@ -250,6 +250,186 @@ def extract_guest_info_from_modal(page: Page) -> dict:
     return info
 
 
+def extract_contact_info_from_modal(page: Page) -> dict:
+    """
+    Extract contact information from the Contact Info & Invitations tab.
+
+    Based on Zola's structure:
+    - STREET ADDRESS, APT/FLOOR, CITY, STATE (dropdown), ZIP CODE, COUNTRY (dropdown)
+    - EMAIL (text input)
+    - MOBILE (text input)
+
+    Returns email, phone, and address for the household.
+    """
+    contact = {
+        'email': '',
+        'phone': '',
+        'address': '',
+    }
+
+    try:
+        # Click on Contact Info & Invitations tab (li[2])
+        tab_clicked = page.evaluate('''() => {
+            // XPath to Contact Info tab
+            const xpath = "/html/body/div[1]/div/div/div[2]/div[1]/div/div/div/div[2]/div/div/div/form/div[1]/nav/div/ul/li[2]/a";
+            const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+            const tab = result.singleNodeValue;
+
+            if (tab) {
+                tab.click();
+                return true;
+            }
+
+            // Fallback: find by text content
+            const modal = document.querySelector('.modal-content');
+            if (!modal) return false;
+
+            const tabs = modal.querySelectorAll('nav ul li a, .tabs-label a');
+            for (const t of tabs) {
+                if (t.textContent.trim().includes('Contact Info')) {
+                    t.click();
+                    return true;
+                }
+            }
+            return false;
+        }''')
+
+        if tab_clicked:
+            page.wait_for_timeout(500)
+            print(f"      Clicked Contact Info tab")
+
+        # Extract contact information using label-based approach
+        contact_data = page.evaluate('''() => {
+            const result = {
+                email: '',
+                phone: '',
+                streetAddress: '',
+                apt: '',
+                city: '',
+                state: '',
+                zipCode: '',
+                country: ''
+            };
+
+            // Helper to find input value by label text
+            function getInputByLabel(labelText) {
+                const labels = Array.from(document.querySelectorAll('label, span, div'));
+                for (const label of labels) {
+                    if (label.textContent.trim().toUpperCase() === labelText.toUpperCase()) {
+                        // Look for input in same container or next sibling
+                        const parent = label.closest('.form-group') || label.parentElement;
+                        if (parent) {
+                            const input = parent.querySelector('input[type="text"], input[type="email"], input[type="tel"]');
+                            if (input) return input.value.trim();
+                        }
+                        // Check next sibling
+                        const nextInput = label.nextElementSibling;
+                        if (nextInput && nextInput.tagName === 'INPUT') {
+                            return nextInput.value.trim();
+                        }
+                    }
+                }
+                return '';
+            }
+
+            // Helper to find select value by label text
+            function getSelectByLabel(labelText) {
+                const labels = Array.from(document.querySelectorAll('label, span, div'));
+                for (const label of labels) {
+                    if (label.textContent.trim().toUpperCase() === labelText.toUpperCase()) {
+                        const parent = label.closest('.form-group') || label.parentElement;
+                        if (parent) {
+                            const select = parent.querySelector('select');
+                            if (select) {
+                                const selectedOption = select.options[select.selectedIndex];
+                                const value = selectedOption ? selectedOption.text.trim() : '';
+                                // Ignore placeholder values
+                                if (value && value !== 'Select...' && value !== 'Select') {
+                                    return value;
+                                }
+                            }
+                        }
+                    }
+                }
+                return '';
+            }
+
+            // Get email and mobile
+            result.email = getInputByLabel('EMAIL');
+            result.phone = getInputByLabel('MOBILE');
+
+            // Get address components
+            result.streetAddress = getInputByLabel('STREET ADDRESS');
+            result.apt = getInputByLabel('APT / FLOOR');
+            result.city = getInputByLabel('CITY');
+            result.state = getSelectByLabel('STATE');
+            result.zipCode = getInputByLabel('ZIP CODE');
+            result.country = getSelectByLabel('COUNTRY');
+
+            // If label approach didn't work, try by input name/placeholder
+            if (!result.email || !result.phone) {
+                const inputs = document.querySelectorAll('input');
+                for (const input of inputs) {
+                    const name = (input.name || '').toLowerCase();
+                    const value = input.value.trim();
+
+                    if (!result.email && name.includes('email') && value) {
+                        result.email = value;
+                    }
+                    if (!result.phone && (name.includes('mobile') || name.includes('phone')) && value) {
+                        result.phone = value;
+                    }
+                }
+            }
+
+            return result;
+        }''')
+
+        contact['email'] = contact_data.get('email', '')
+        contact['phone'] = contact_data.get('phone', '')
+
+        # Build address from components
+        address_parts = []
+        street = contact_data.get('streetAddress', '')
+        apt = contact_data.get('apt', '')
+        city = contact_data.get('city', '')
+        state = contact_data.get('state', '')
+        zip_code = contact_data.get('zipCode', '')
+        country = contact_data.get('country', '')
+
+        if street:
+            if apt:
+                address_parts.append(f"{street}, {apt}")
+            else:
+                address_parts.append(street)
+        if city:
+            if state and zip_code:
+                address_parts.append(f"{city}, {state} {zip_code}")
+            elif state:
+                address_parts.append(f"{city}, {state}")
+            elif zip_code:
+                address_parts.append(f"{city} {zip_code}")
+            else:
+                address_parts.append(city)
+        if country and country != 'United States':
+            address_parts.append(country)
+
+        contact['address'] = ', '.join(address_parts)
+
+        print(f"      Email: {contact['email'] or '(none)'}")
+        print(f"      Phone: {contact['phone'] or '(none)'}")
+        if contact['address']:
+            addr_display = contact['address'][:40] + '...' if len(contact['address']) > 40 else contact['address']
+            print(f"      Address: {addr_display}")
+        else:
+            print(f"      Address: (none)")
+
+    except Exception as e:
+        print(f"      Warning extracting contact info: {e}")
+
+    return contact
+
+
 def extract_rsvp_from_modal(page: Page) -> dict:
     """
     Extract RSVP status AND person names from the RSVP Status tab.
@@ -395,6 +575,9 @@ def scrape_guest_from_modal(page: Page, data_dir: Path, guest_num: int) -> dict 
         'partner_first': '',
         'partner_last': '',
         'relationship': '',
+        'email': '',
+        'phone': '',
+        'address': '',
         'rsvp': {},
     }
 
@@ -430,6 +613,12 @@ def scrape_guest_from_modal(page: Page, data_dir: Path, guest_num: int) -> dict 
         if result['partner_first']:
             print(f"      Partner: {result['partner_first']} {result['partner_last']}")
         print(f"      Relationship: {result['relationship']}")
+
+        # === CONTACT INFO TAB ===
+        contact_info = extract_contact_info_from_modal(page)
+        result['email'] = contact_info.get('email', '')
+        result['phone'] = contact_info.get('phone', '')
+        result['address'] = contact_info.get('address', '')
 
         # === RSVP STATUS TAB ===
         # Use XPath provided by user to click the RSVP Status tab
@@ -1319,6 +1508,9 @@ def results_to_rows(results: list[dict]) -> list[dict]:
                 'Guest_Of': '' if i == 0 else head_of_household,  # First person is head
                 'Relationship': relationship,
                 'Side': side,
+                'Email': guest.get('email', ''),
+                'Phone': guest.get('phone', ''),
+                'Address': guest.get('address', ''),
             }
 
             # Add RSVP columns for each event

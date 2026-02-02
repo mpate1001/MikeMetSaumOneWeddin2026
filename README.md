@@ -176,6 +176,9 @@ Output CSV has one row per person:
 | `Guest_Of` | Head of household (empty if this is the head) |
 | `Relationship` | Relationship type (e.g., "Saumya's Family") |
 | `Side` | Bride or Groom |
+| `Email` | Household email (empty if none) |
+| `Phone` | Household phone/mobile (empty if none) |
+| `Address` | Household mailing address (empty if none) |
 | `RSVP_Maheks_Vidhi_and_Haaldi` | RSVP status for event |
 | `RSVP_Saumyas_Vidhi_and_Haaldi` | RSVP status for event |
 | `RSVP_Wedding` | RSVP status for event |
