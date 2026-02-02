@@ -191,12 +191,19 @@ export function useGuestData() {
   }, [filteredGuests]);
 
   const relationshipStats = useMemo(() => {
-    const counts: Record<string, number> = {};
+    const counts: Record<string, { count: number; brideOrGroom: 'Bride' | 'Groom' | 'Unknown' }> = {};
     filteredGuests.forEach(guest => {
-      counts[guest.side] = (counts[guest.side] || 0) + 1;
+      if (!counts[guest.side]) {
+        counts[guest.side] = { count: 0, brideOrGroom: guest.brideOrGroom };
+      }
+      counts[guest.side].count++;
     });
     return Object.entries(counts)
-      .map(([relationship, count]) => ({ relationship, count }))
+      .map(([relationship, data]) => ({
+        relationship,
+        count: data.count,
+        brideOrGroom: data.brideOrGroom,
+      }))
       .sort((a, b) => b.count - a.count);
   }, [filteredGuests]);
 

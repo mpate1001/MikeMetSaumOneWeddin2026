@@ -15,7 +15,7 @@ import type { SummaryStats } from '../types/guest';
 
 interface ChartsProps {
   stats: SummaryStats;
-  relationshipStats: { relationship: string; count: number }[];
+  relationshipStats: { relationship: string; count: number; brideOrGroom: 'Bride' | 'Groom' | 'Unknown' }[];
 }
 
 const COLORS = {
@@ -161,9 +161,27 @@ export function Charts({ stats, relationshipStats }: ChartsProps) {
               />
               <YAxis />
               <Tooltip />
-              <Bar dataKey="count" fill={COLORS.bride} />
+              <Bar dataKey="count">
+                {relationshipStats.slice(0, 8).map((entry, index) => (
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={entry.brideOrGroom === 'Bride' ? COLORS.bride : COLORS.groom}
+                  />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
+          {/* Legend */}
+          <div className="flex justify-center gap-6 mt-2 text-sm">
+            <span className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded bg-strawberry"></span>
+              <span className="text-gray-600">Bride's Side</span>
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded bg-space-indigo"></span>
+              <span className="text-gray-600">Groom's Side</span>
+            </span>
+          </div>
         </div>
       </div>
     </div>
