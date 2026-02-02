@@ -853,6 +853,70 @@ def save_failed_guests(failed_guests: list[FailedGuest], output_dir: Path, times
     print(f"Saved {len(failed_guests)} failed guests to: {failed_path}")
 
 
+def merge_with_existing_csv(new_results: list[dict], existing_csv_path: Path, output_path: Path):
+    """
+    Merge new scrape results with an existing CSV.
+
+    New results replace existing rows based on Household_Index.
+    Rows not in new results are kept from existing CSV.
+    """
+    # Load existing CSV
+    existing_rows = []
+    with open(existing_csv_path, 'r', newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        existing_rows = list(reader)
+
+    print(f"Loaded {len(existing_rows)} rows from existing CSV")
+
+    # Get household indices that were re-scraped
+    new_household_indices = set()
+    for result in new_results:
+        idx = result.get('row_index')
+        if idx is not None:
+            new_household_indices.add(idx)
+
+    print(f"Re-scraped {len(new_household_indices)} households: {sorted(new_household_indices)}")
+
+    # Filter out old rows for re-scraped households
+    kept_rows = [row for row in existing_rows
+                 if int(row.get('Household_Index', -1)) not in new_household_indices]
+
+    print(f"Keeping {len(kept_rows)} existing rows (not re-scraped)")
+
+    # Return the kept rows and new results for save_results to handle
+    return kept_rows, new_household_indices
+
+
+def save_results_with_merge(results: list[dict], existing_csv_path: Path, output_path: Path):
+    """
+    Save scraped results to CSV, merging with existing data.
+
+    Keeps existing rows that weren't re-scraped, replaces rows that were.
+    """
+    # Get kept rows from existing CSV
+    kept_rows, merged_indices = merge_with_existing_csv(results, existing_csv_path, output_path)
+
+    # Process new results into rows
+    new_rows = results_to_rows(results)
+
+    # Combine: kept rows + new rows
+    all_rows = kept_rows + new_rows
+
+    # Sort by Household_Index to maintain order
+    all_rows.sort(key=lambda r: int(r.get('Household_Index', 0)))
+
+    # Write combined CSV
+    if all_rows:
+        fieldnames = list(all_rows[0].keys())
+        with open(output_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(all_rows)
+
+        print(f"Merged {len(new_rows)} new rows with {len(kept_rows)} existing rows")
+        print(f"Saved {len(all_rows)} total individuals to: {output_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Scrape guest data from Zola")
     parser.add_argument("--headless", action="store_true", help="Run browser in headless mode")
@@ -864,6 +928,8 @@ def main():
     parser.add_argument("--max-retries", type=int, default=3, help="Max immediate retries per guest")
     parser.add_argument("--no-retry-pass", action="store_true", help="Disable final retry pass for failed guests")
     parser.add_argument("--max-failures", type=int, default=5, help="Max acceptable failures before failing the run")
+    parser.add_argument("--from-failed-log", action="store_true", help="Retry guests from the most recent failed_guests JSON")
+    parser.add_argument("--merge-with", type=str, default="", help="Path to existing CSV to merge results into")
     args = parser.parse_args()
 
     # Configure retry behavior
@@ -875,10 +941,64 @@ def main():
         slow_mode_delay_ms=2500 if args.slow else 2000,
     )
 
+    # Setup directories (need early for --from-failed-log)
+    script_dir = Path(__file__).parent
+    data_dir = script_dir.parent / "data"
+    output_dir = data_dir / "scraped"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     # Parse specific indices if provided
     target_indices = None
     if args.indices:
         target_indices = set(int(i.strip()) for i in args.indices.split(',') if i.strip())
+
+    # Load indices from failed guests log if requested
+    failed_log_path = None
+    if args.from_failed_log:
+        # Find the most recent failed_guests_*.json
+        failed_logs = sorted(output_dir.glob("failed_guests_*.json"), reverse=True)
+        if not failed_logs:
+            print("ERROR: No failed_guests_*.json found in data/scraped/")
+            print("Run a full scrape first to generate failed guest logs.")
+            sys.exit(1)
+
+        failed_log_path = failed_logs[0]
+        print(f"Loading failed guests from: {failed_log_path}")
+
+        with open(failed_log_path, 'r') as f:
+            failed_data = json.load(f)
+
+        failed_indices = [g['index'] for g in failed_data.get('guests', [])]
+        if not failed_indices:
+            print("No failed guests found in the log. Nothing to retry!")
+            sys.exit(0)
+
+        target_indices = set(failed_indices)
+        print(f"Found {len(target_indices)} failed guests to retry: {sorted(target_indices)}")
+
+    # Validate merge-with path if provided
+    merge_csv_path = None
+    if args.merge_with:
+        merge_csv_path = Path(args.merge_with)
+        if not merge_csv_path.exists():
+            # Try relative to output_dir
+            merge_csv_path = output_dir / args.merge_with
+            if not merge_csv_path.exists():
+                print(f"ERROR: Merge CSV not found: {args.merge_with}")
+                sys.exit(1)
+        print(f"Will merge results into: {merge_csv_path}")
+
+    # Auto-detect merge CSV when using --from-failed-log
+    if args.from_failed_log and not merge_csv_path:
+        # Find the most recent non-partial, non-error CSV
+        existing_csvs = sorted(
+            [f for f in output_dir.glob("zola_guests_*.csv")
+             if not any(x in f.name for x in ['partial', 'error', 'interrupted'])],
+            reverse=True
+        )
+        if existing_csvs:
+            merge_csv_path = existing_csvs[0]
+            print(f"Auto-detected merge target: {merge_csv_path}")
 
     # Check for session
     session_state = get_session_from_file()
@@ -886,12 +1006,6 @@ def main():
         print("ERROR: No saved session found.")
         print("Run: python download_zola_data.py --save-session")
         sys.exit(1)
-
-    # Setup directories
-    script_dir = Path(__file__).parent
-    data_dir = script_dir.parent / "data"
-    output_dir = data_dir / "scraped"
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Timestamp for output file
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -1040,7 +1154,11 @@ def main():
                 total_attempted = len(target_indices)
 
             if all_results:
-                save_results(all_results, output_path)
+                if merge_csv_path:
+                    # Merge with existing CSV
+                    save_results_with_merge(all_results, merge_csv_path, output_path)
+                else:
+                    save_results(all_results, output_path)
                 print(f"\nSuccessfully scraped: {len(all_results)}/{total_attempted} guests")
             else:
                 print("\nNo results to save!")
@@ -1090,20 +1208,13 @@ def main():
             browser.close()
 
 
-def save_results(results: list[dict], output_path: Path):
+def results_to_rows(results: list[dict]) -> list[dict]:
     """
-    Save scraped results to CSV with one row per person.
+    Convert scraped results to CSV rows with one row per person.
 
     Each person gets their own row. Partners/guests have a 'Guest_Of' column
     linking them to the household head (first person listed).
-
-    Names and RSVP statuses are extracted from the RSVP Status tab where
-    each person is listed as "1. Name", "2. Name", etc.
     """
-    if not results:
-        return
-
-    # Flatten the data for CSV - one row per person
     rows = []
     for guest in results:
         # Get relationship - try from scraped data first, then from display name
@@ -1220,6 +1331,16 @@ def save_results(results: list[dict], output_path: Path):
             row['Events_Invited'] = ', '.join(events_invited) if events_invited else ''
 
             rows.append(row)
+
+    return rows
+
+
+def save_results(results: list[dict], output_path: Path):
+    """Save scraped results to CSV with one row per person."""
+    if not results:
+        return
+
+    rows = results_to_rows(results)
 
     # Write CSV
     if rows:

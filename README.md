@@ -64,6 +64,8 @@ Options:
   --no-retry-pass     Disable final retry pass
   --max-failures N    Acceptable failures before failing (default: 5)
   --keep-open N       Seconds to keep browser open after (default: 5)
+  --from-failed-log   Retry only guests from most recent failed_guests JSON
+  --merge-with PATH   Merge results into existing CSV (auto-detected with --from-failed-log)
 ```
 
 ### Running Locally
@@ -126,12 +128,32 @@ npm run build
 ### Sync Zola RSVP Data (`.github/workflows/sync-zola-data.yml`)
 
 - **Schedule**: Daily at 8 AM UTC (3 AM EST / 12 AM PST)
-- **Manual**: Can trigger from Actions tab
-- **Steps**:
-  1. Restores Zola session from GitHub Secrets
-  2. Runs scraper in headless mode
-  3. Copies latest CSV to `site/public/data.csv`
-  4. Commits and pushes if changes detected
+- **Manual**: Can trigger from Actions tab with run mode selection
+
+#### Run Modes
+
+| Mode | Description |
+|------|-------------|
+| `full` (default) | Scrapes all guests (~30 min). Used for scheduled daily runs. |
+| `retry-failed` | Only re-scrapes guests from the most recent `failed_guests_*.json`, merges into existing CSV. Fast! |
+
+#### Workflow Steps
+
+1. Restores Zola session from GitHub Secrets
+2. Runs scraper (full or retry-failed based on mode)
+3. Copies latest CSV to `site/public/data.csv`
+4. Commits and pushes if changes detected
+5. **If failures**: Creates/updates a GitHub Issue with failed guest details
+6. **If retry succeeds**: Auto-closes the failure issue
+
+#### Failure Notifications
+
+When guests fail to scrape, the workflow:
+1. Creates a GitHub Issue labeled `scraper-alert`
+2. Lists which guests failed and why
+3. Provides instructions to run `retry-failed` mode
+
+You'll get an email notification (if enabled in GitHub) when an issue is created.
 
 ### Deploy Dashboard (`.github/workflows/deploy-dashboard.yml`)
 
