@@ -17,7 +17,7 @@ interface GuestTableProps {
   guests: Guest[];
 }
 
-function RSVPBadge({ status }: { status: RSVPStatus }) {
+function RSVPBadge({ status, compact = false }: { status: RSVPStatus; compact?: boolean }) {
   const colors: Record<RSVPStatus, string> = {
     Attending: 'bg-green-100 text-green-800',
     Declined: 'bg-red-100 text-crimson',
@@ -25,10 +25,58 @@ function RSVPBadge({ status }: { status: RSVPStatus }) {
     'Not Invited': 'bg-gray-100 text-gray-500',
   };
 
+  const shortLabels: Record<RSVPStatus, string> = {
+    Attending: 'Yes',
+    Declined: 'No',
+    'No Response': '—',
+    'Not Invited': 'N/A',
+  };
+
   return (
     <span className={`px-2 py-1 text-xs rounded-full font-medium ${colors[status]}`}>
-      {status}
+      {compact ? shortLabels[status] : status}
     </span>
+  );
+}
+
+// Mobile card component for each guest
+function GuestCard({ guest }: { guest: Guest }) {
+  const name = [guest.title, guest.firstName, guest.lastName, guest.suffix]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <div className="bg-white border-b border-gray-200 p-4">
+      <div className="flex justify-between items-start mb-2">
+        <div>
+          <p className="font-medium text-space-indigo">{name || '(No name)'}</p>
+          <p className="text-xs text-gray-500">{guest.side}</p>
+        </div>
+        <span className={`text-xs font-medium px-2 py-1 rounded ${
+          guest.brideOrGroom === 'Bride' ? 'bg-strawberry/10 text-strawberry' : 'bg-space-indigo/10 text-space-indigo'
+        }`}>
+          {guest.brideOrGroom}
+        </span>
+      </div>
+      <div className="grid grid-cols-4 gap-2 mt-3">
+        <div className="text-center">
+          <p className="text-[10px] text-gray-400 mb-1">S. V&H</p>
+          <RSVPBadge status={guest.saumyaVidhiHaaldi} compact />
+        </div>
+        <div className="text-center">
+          <p className="text-[10px] text-gray-400 mb-1">M. V&H</p>
+          <RSVPBadge status={guest.mahekVidhiHaaldi} compact />
+        </div>
+        <div className="text-center">
+          <p className="text-[10px] text-gray-400 mb-1">Wedding</p>
+          <RSVPBadge status={guest.wedding} compact />
+        </div>
+        <div className="text-center">
+          <p className="text-[10px] text-gray-400 mb-1">Reception</p>
+          <RSVPBadge status={guest.reception} compact />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -140,12 +188,15 @@ export function GuestTable({ guests }: GuestTableProps) {
     URL.revokeObjectURL(url);
   };
 
+  // Get paginated guests for mobile card view
+  const paginatedGuests = table.getRowModel().rows.map(row => row.original);
+
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden">
       {/* Table Header */}
       <div className="px-4 py-3 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-600">Group by:</label>
+          <label className="text-sm text-gray-600 hidden sm:inline">Group by:</label>
           <select
             value={grouping[0] || ''}
             onChange={(e) => setGrouping(e.target.value ? [e.target.value] : [])}
@@ -165,8 +216,15 @@ export function GuestTable({ guests }: GuestTableProps) {
         </button>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto">
+      {/* Mobile Card View */}
+      <div className="md:hidden">
+        {paginatedGuests.map((guest, idx) => (
+          <GuestCard key={`${guest.firstName}-${guest.lastName}-${idx}`} guest={guest} />
+        ))}
+      </div>
+
+      {/* Desktop Table View */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50">
             {table.getHeaderGroups().map((headerGroup) => (
@@ -226,7 +284,7 @@ export function GuestTable({ guests }: GuestTableProps) {
             disabled={!table.getCanPreviousPage()}
             className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
           >
-            Previous
+            Prev
           </button>
           <button
             onClick={() => table.nextPage()}
@@ -237,7 +295,7 @@ export function GuestTable({ guests }: GuestTableProps) {
           </button>
         </div>
         <span className="text-sm text-gray-600">
-          Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+          {table.getState().pagination.pageIndex + 1} / {table.getPageCount()}
         </span>
         <select
           value={table.getState().pagination.pageSize}
@@ -246,7 +304,7 @@ export function GuestTable({ guests }: GuestTableProps) {
         >
           {[25, 50, 100, 200].map((size) => (
             <option key={size} value={size}>
-              Show {size}
+              {size}
             </option>
           ))}
         </select>

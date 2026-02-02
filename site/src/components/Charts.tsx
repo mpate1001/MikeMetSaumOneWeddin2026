@@ -97,7 +97,7 @@ export function Charts({ stats, relationshipStats }: ChartsProps) {
       {/* Guests by Side - Row of pie charts */}
       <div className="bg-white rounded-lg shadow p-4">
         <h3 className="text-lg font-semibold text-space-indigo mb-4">Attending by Side</h3>
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
           {/* Total */}
           <MiniPieChart
             title="Total"
@@ -136,9 +136,9 @@ export function Charts({ stats, relationshipStats }: ChartsProps) {
             <BarChart data={eventData} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis type="number" />
-              <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 12 }} />
+              <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 10 }} />
               <Tooltip />
-              <Legend />
+              <Legend wrapperStyle={{ fontSize: '12px' }} />
               <Bar dataKey="Attending" stackId="a" fill={COLORS.attending} />
               <Bar dataKey="Declined" stackId="a" fill={COLORS.declined} />
               <Bar dataKey="No Response" stackId="a" fill={COLORS.noResponse} />
