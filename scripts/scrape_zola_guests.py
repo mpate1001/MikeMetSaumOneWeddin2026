@@ -315,12 +315,39 @@ def extract_contact_info_from_modal(page: Page) -> dict:
             function getInputByLabel(labelText) {
                 const labels = Array.from(document.querySelectorAll('label, span, div'));
                 for (const label of labels) {
-                    if (label.textContent.trim().toUpperCase() === labelText.toUpperCase()) {
+                    const labelContent = label.textContent.trim().toUpperCase();
+                    // Must be exact match (not just contains) to avoid EMAIL matching when looking for MOBILE
+                    if (labelContent === labelText.toUpperCase() ||
+                        labelContent === labelText.toUpperCase() + ':') {
                         // Look for input in same container or next sibling
                         const parent = label.closest('.form-group') || label.parentElement;
                         if (parent) {
-                            const input = parent.querySelector('input[type="text"], input[type="email"], input[type="tel"]');
-                            if (input) return input.value.trim();
+                            // Get all inputs in parent and find the one closest to/after this label
+                            const inputs = parent.querySelectorAll('input[type="text"], input[type="email"], input[type="tel"]');
+                            for (const input of inputs) {
+                                // Make sure we're getting the right input (not one for a different label)
+                                const inputName = (input.name || '').toLowerCase();
+                                const inputPlaceholder = (input.placeholder || '').toLowerCase();
+
+                                // For MOBILE, look for input with mobile/phone in name
+                                if (labelText.toUpperCase() === 'MOBILE') {
+                                    if (inputName.includes('mobile') || inputName.includes('phone') ||
+                                        inputPlaceholder.includes('mobile') || inputPlaceholder.includes('phone')) {
+                                        return input.value.trim();
+                                    }
+                                }
+                                // For EMAIL, look for input with email in name or type
+                                else if (labelText.toUpperCase() === 'EMAIL') {
+                                    if (inputName.includes('email') || input.type === 'email' ||
+                                        inputPlaceholder.includes('email')) {
+                                        return input.value.trim();
+                                    }
+                                }
+                                // For other fields, return first input found
+                                else {
+                                    return input.value.trim();
+                                }
+                            }
                         }
                         // Check next sibling
                         const nextInput = label.nextElementSibling;
@@ -357,6 +384,21 @@ def extract_contact_info_from_modal(page: Page) -> dict:
             // Get email and mobile
             result.email = getInputByLabel('EMAIL');
             result.phone = getInputByLabel('MOBILE');
+
+            // If phone still not found or looks like email, search more specifically
+            if (!result.phone || result.phone.includes('@')) {
+                const inputs = document.querySelectorAll('input');
+                for (const input of inputs) {
+                    const name = (input.name || '').toLowerCase();
+                    const value = input.value.trim();
+                    // Look for mobile/phone input that contains digits (not email)
+                    if ((name.includes('mobile') || name.includes('phone')) &&
+                        value && !value.includes('@') && /\d/.test(value)) {
+                        result.phone = value;
+                        break;
+                    }
+                }
+            }
 
             // Get address components
             result.streetAddress = getInputByLabel('STREET ADDRESS');
