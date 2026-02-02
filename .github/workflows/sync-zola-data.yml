@@ -104,6 +104,11 @@ jobs:
             echo "has_changes=true" >> $GITHUB_OUTPUT
           fi
 
+      - name: Archive old data files
+        run: |
+          python scripts/archive_old_data.py --keep 2
+          echo "Old files archived"
+
       - name: Commit and push changes
         if: steps.changes.outputs.has_changes == 'true'
         run: |
