@@ -25,6 +25,7 @@ Usage:
 import argparse
 import csv
 import json
+import os
 import re
 import sys
 import time
@@ -33,6 +34,29 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from playwright.sync_api import sync_playwright, Page, Locator, TimeoutError as PlaywrightTimeout
+
+# Import formatting utilities
+try:
+    from format_utils import format_phone_number, format_address
+    FORMATTING_AVAILABLE = True
+except ImportError:
+    FORMATTING_AVAILABLE = False
+    def format_phone_number(phone, default_region="US"):
+        return phone
+    def format_address(**kwargs):
+        parts = [kwargs.get('street', '')]
+        if kwargs.get('apt'):
+            parts[0] += f", {kwargs['apt']}"
+        city_state = kwargs.get('city', '')
+        if kwargs.get('state'):
+            city_state += f", {kwargs['state']}"
+        if kwargs.get('zip_code'):
+            city_state += f" {kwargs['zip_code']}"
+        if city_state:
+            parts.append(city_state)
+        if kwargs.get('country') and kwargs['country'].lower() not in ('', 'us', 'usa', 'united states'):
+            parts.append(kwargs['country'])
+        return ', '.join(p for p in parts if p)
 
 
 @dataclass
@@ -428,10 +452,12 @@ def extract_contact_info_from_modal(page: Page) -> dict:
         }''')
 
         contact['email'] = contact_data.get('email', '')
-        contact['phone'] = contact_data.get('phone', '')
 
-        # Build address from components
-        address_parts = []
+        # Format phone number
+        raw_phone = contact_data.get('phone', '')
+        contact['phone'] = format_phone_number(raw_phone) if raw_phone else ''
+
+        # Get address components
         street = contact_data.get('streetAddress', '')
         apt = contact_data.get('apt', '')
         city = contact_data.get('city', '')
@@ -439,30 +465,34 @@ def extract_contact_info_from_modal(page: Page) -> dict:
         zip_code = contact_data.get('zipCode', '')
         country = contact_data.get('country', '')
 
-        if street:
-            if apt:
-                address_parts.append(f"{street}, {apt}")
-            else:
-                address_parts.append(street)
-        if city:
-            if state and zip_code:
-                address_parts.append(f"{city}, {state} {zip_code}")
-            elif state:
-                address_parts.append(f"{city}, {state}")
-            elif zip_code:
-                address_parts.append(f"{city} {zip_code}")
-            else:
-                address_parts.append(city)
-        if country and country != 'United States':
-            address_parts.append(country)
+        # Store individual components for potential later use
+        contact['street'] = street
+        contact['apt'] = apt
+        contact['city'] = city
+        contact['state'] = state
+        contact['zip_code'] = zip_code
+        contact['country'] = country
 
-        contact['address'] = ', '.join(address_parts)
+        # Format and optionally validate address
+        # USPS validation is enabled if USPS_USER_ID env var is set
+        usps_user_id = os.environ.get('USPS_USER_ID')
+        contact['address'] = format_address(
+            street=street,
+            apt=apt,
+            city=city,
+            state=state,
+            zip_code=zip_code,
+            country=country,
+            validate_us=bool(usps_user_id),
+            usps_user_id=usps_user_id
+        )
 
         print(f"      Email: {contact['email'] or '(none)'}")
-        print(f"      Phone: {contact['phone'] or '(none)'}")
+        print(f"      Phone: {contact['phone'] or '(none)'}" + (f" (raw: {raw_phone})" if raw_phone != contact['phone'] and raw_phone else ""))
         if contact['address']:
             addr_display = contact['address'][:40] + '...' if len(contact['address']) > 40 else contact['address']
-            print(f"      Address: {addr_display}")
+            validated_note = " [USPS]" if usps_user_id else ""
+            print(f"      Address: {addr_display}{validated_note}")
         else:
             print(f"      Address: (none)")
 

@@ -190,11 +190,29 @@ RSVP Status values: `Attending`, `Declined`, `No Response`, or empty (not invite
 
 In GitHub repository settings, add:
 
-- `ZOLA_SESSION`: Base64-encoded Zola session JSON
+- `ZOLA_SESSION` (required): Base64-encoded Zola session JSON
   ```bash
   # Generate with:
   cat data/.zola_session.json | base64
   ```
+
+- `USPS_USER_ID` (optional): USPS Web Tools User ID for address validation
+  - Register free at: https://www.usps.com/business/web-tools-apis/
+  - If not set, addresses are formatted but not validated
+
+## Phone & Address Formatting
+
+The scraper automatically:
+
+**Phone Numbers:**
+- Formats to `(XXX) XXX-XXXX` for US numbers
+- Uses international format for non-US numbers
+- Handles various input formats (10 digits, with dashes, country codes)
+
+**Addresses:**
+- If `USPS_USER_ID` is set: validates and standardizes US addresses via USPS API
+- For international addresses: formats without validation
+- Combines street, apt, city, state, ZIP, country into single string
 
 ## Troubleshooting
 
