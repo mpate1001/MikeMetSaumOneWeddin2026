@@ -79,6 +79,16 @@ function GuestCard({ guest }: { guest: Guest }) {
           <RSVPBadge status={guest.reception} compact />
         </div>
       </div>
+      {(guest.email || guest.phone) && (
+        <div className="mt-3 pt-2 border-t border-gray-100 text-xs text-gray-600">
+          {guest.email && (
+            <a href={`mailto:${guest.email}`} className="text-blue-600 block truncate">{guest.email}</a>
+          )}
+          {guest.phone && (
+            <a href={`tel:${guest.phone}`} className="text-blue-600">{guest.phone}</a>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -161,6 +171,42 @@ export function GuestTable({ guests, title, showSearch = false, accentColor }: G
         header: 'Reception',
         cell: ({ getValue }) => <RSVPBadge status={getValue() as RSVPStatus} />,
       },
+      {
+        accessorKey: 'email',
+        header: 'Email',
+        cell: ({ getValue }) => {
+          const email = getValue() as string;
+          return email ? (
+            <a href={`mailto:${email}`} className="text-blue-600 hover:underline text-xs">
+              {email}
+            </a>
+          ) : <span className="text-gray-400">—</span>;
+        },
+      },
+      {
+        accessorKey: 'phone',
+        header: 'Phone',
+        cell: ({ getValue }) => {
+          const phone = getValue() as string;
+          return phone ? (
+            <a href={`tel:${phone}`} className="text-blue-600 hover:underline text-xs">
+              {phone}
+            </a>
+          ) : <span className="text-gray-400">—</span>;
+        },
+      },
+      {
+        accessorKey: 'address',
+        header: 'Address',
+        cell: ({ getValue }) => {
+          const address = getValue() as string;
+          return address ? (
+            <span className="text-xs" title={address}>
+              {address.length > 25 ? `${address.substring(0, 25)}...` : address}
+            </span>
+          ) : <span className="text-gray-400">—</span>;
+        },
+      },
     ],
     []
   );
@@ -187,7 +233,7 @@ export function GuestTable({ guests, title, showSearch = false, accentColor }: G
   });
 
   const exportToCSV = () => {
-    const headers = ['Title', 'First Name', 'Last Name', 'Suffix', 'Side', 'Relationship', "Saumya's V&H", "Mahek's V&H", 'Wedding', 'Reception'];
+    const headers = ['Title', 'First Name', 'Last Name', 'Suffix', 'Side', 'Relationship', "Saumya's V&H", "Mahek's V&H", 'Wedding', 'Reception', 'Email', 'Phone', 'Address'];
     const rows = filteredGuests.map(g => [
       g.title,
       g.firstName,
@@ -199,6 +245,9 @@ export function GuestTable({ guests, title, showSearch = false, accentColor }: G
       g.mahekVidhiHaaldi,
       g.wedding,
       g.reception,
+      g.email,
+      g.phone,
+      g.address,
     ]);
 
     const csvContent = [

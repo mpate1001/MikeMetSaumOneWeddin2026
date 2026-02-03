@@ -53,6 +53,9 @@ function parseGuest(raw: RawGuestData): Guest {
     reception: parseRSVPStatus(getColumnValue(raw, "RSVP_Reception", "Reception")),
     side,
     brideOrGroom: brideOrGroom as 'Bride' | 'Groom' | 'Unknown',
+    email: raw.Email || '',
+    phone: raw.Phone || '',
+    address: raw.Address || '',
   };
 }
 

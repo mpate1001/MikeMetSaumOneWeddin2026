@@ -11,6 +11,9 @@ export interface Guest {
   reception: RSVPStatus;
   side: string;
   brideOrGroom: 'Bride' | 'Groom' | 'Unknown';
+  email: string;
+  phone: string;
+  address: string;
 }
 
 export interface GuestFilters {

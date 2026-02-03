@@ -94,12 +94,15 @@ export function FollowUpList({ guests }: FollowUpListProps) {
   const groomNoResponse = noResponseGuests.filter(g => g.brideOrGroom === 'Groom').length;
 
   const exportToCSV = () => {
-    const headers = ['First Name', 'Last Name', 'Side', 'Relationship'];
+    const headers = ['First Name', 'Last Name', 'Side', 'Relationship', 'Email', 'Phone', 'Address'];
     const rows = filteredGuests.map(g => [
       g.firstName,
       g.lastName,
       g.brideOrGroom,
       g.side,
+      g.email,
+      g.phone,
+      g.address,
     ]);
 
     const csvContent = [
@@ -244,6 +247,16 @@ export function FollowUpList({ guests }: FollowUpListProps) {
                       {guest.brideOrGroom}
                     </span>
                   </div>
+                  {(guest.email || guest.phone) && (
+                    <div className="mt-2 text-xs text-gray-600">
+                      {guest.email && (
+                        <a href={`mailto:${guest.email}`} className="text-blue-600 block truncate">{guest.email}</a>
+                      )}
+                      {guest.phone && (
+                        <a href={`tel:${guest.phone}`} className="text-blue-600">{guest.phone}</a>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })
@@ -280,6 +293,12 @@ export function FollowUpList({ guests }: FollowUpListProps) {
                   >
                     Relationship {sortField === 'relationship' && (sortDirection === 'asc' ? '↑' : '↓')}
                   </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Email
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Phone
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -296,6 +315,20 @@ export function FollowUpList({ guests }: FollowUpListProps) {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600">{guest.side}</td>
+                      <td className="px-4 py-3 text-sm">
+                        {guest.email ? (
+                          <a href={`mailto:${guest.email}`} className="text-blue-600 hover:underline text-xs">
+                            {guest.email}
+                          </a>
+                        ) : <span className="text-gray-400">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {guest.phone ? (
+                          <a href={`tel:${guest.phone}`} className="text-blue-600 hover:underline text-xs">
+                            {guest.phone}
+                          </a>
+                        ) : <span className="text-gray-400">—</span>}
+                      </td>
                     </tr>
                   );
                 })}
