@@ -28,6 +28,12 @@ function getColumnValue(raw: RawGuestData, ...patterns: string[]): string {
   return '';
 }
 
+function parseBrideOrGroom(value: string | undefined): 'Bride' | 'Groom' | 'Unknown' {
+  if (value === 'Bride') return 'Bride';
+  if (value === 'Groom') return 'Groom';
+  return 'Unknown';
+}
+
 function parseGuest(raw: RawGuestData): Guest {
   // Support both old format and new scraper format
   const firstName = raw.First_Name || raw['First Name'] || '';
@@ -36,11 +42,11 @@ function parseGuest(raw: RawGuestData): Guest {
   // New format: Side = Bride/Groom, Relationship = relationship type
   // Old format: Side = relationship type, Bride_or_Groom = Bride/Groom
   const side = raw.Relationship || raw.Side || 'Unknown';
-  const brideOrGroom = raw.Side === 'Bride' || raw.Side === 'Groom'
-    ? raw.Side
-    : (raw.Bride_or_Groom === 'Bride' || raw.Bride_or_Groom === 'Groom')
-      ? raw.Bride_or_Groom
-      : 'Unknown';
+
+  // Determine bride/groom with type-safe parsing
+  const brideOrGroom = (raw.Side === 'Bride' || raw.Side === 'Groom')
+    ? parseBrideOrGroom(raw.Side)
+    : parseBrideOrGroom(raw.Bride_or_Groom);
 
   return {
     title: raw.Title || '',
@@ -52,7 +58,7 @@ function parseGuest(raw: RawGuestData): Guest {
     wedding: parseRSVPStatus(getColumnValue(raw, "RSVP_Wedding", "Wedding")),
     reception: parseRSVPStatus(getColumnValue(raw, "RSVP_Reception", "Reception")),
     side,
-    brideOrGroom: brideOrGroom as 'Bride' | 'Groom' | 'Unknown',
+    brideOrGroom,
     email: raw.Email || '',
     phone: raw.Phone || '',
     address: raw.Address || '',
@@ -72,18 +78,26 @@ export function useGuestData() {
   });
 
   useEffect(() => {
+    const abortController = new AbortController();
+
     async function fetchData() {
       try {
-        const response = await fetch(`${import.meta.env.BASE_URL}data.csv`);
+        const response = await fetch(`${import.meta.env.BASE_URL}data.csv`, {
+          signal: abortController.signal,
+        });
         if (!response.ok) {
           throw new Error('Failed to fetch guest data');
         }
         const csvText = await response.text();
 
+        // Don't update state if component unmounted
+        if (abortController.signal.aborted) return;
+
         Papa.parse<RawGuestData>(csvText, {
           header: true,
           skipEmptyLines: true,
           complete: (results) => {
+            if (abortController.signal.aborted) return;
             const parsedGuests = results.data.map(parseGuest);
             setGuests(parsedGuests);
             setLastUpdated(new Date().toLocaleDateString('en-US', {
@@ -96,17 +110,23 @@ export function useGuestData() {
             setLoading(false);
           },
           error: (err: Error) => {
+            if (abortController.signal.aborted) return;
             setError(err.message);
             setLoading(false);
           },
         });
       } catch (err) {
+        if (abortController.signal.aborted) return;
         setError(err instanceof Error ? err.message : 'Unknown error');
         setLoading(false);
       }
     }
 
     fetchData();
+
+    return () => {
+      abortController.abort();
+    };
   }, []);
 
   const filteredGuests = useMemo(() => {

@@ -250,9 +250,12 @@ export function GuestTable({ guests, title, showSearch = false, accentColor }: G
       g.address,
     ]);
 
+    // Escape double quotes in CSV cells by doubling them
+    const escapeCSV = (cell: string) => `"${(cell || '').replace(/"/g, '""')}"`;
+
     const csvContent = [
       headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
+      ...rows.map(row => row.map(escapeCSV).join(',')),
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' });
