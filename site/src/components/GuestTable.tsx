@@ -13,6 +13,133 @@ import {
 } from '@tanstack/react-table';
 import type { Guest, RSVPStatus } from '../types/guest';
 
+// Guest detail modal component
+function GuestModal({ guest, onClose }: { guest: Guest; onClose: () => void }) {
+  const name = [guest.title, guest.firstName, guest.lastName, guest.suffix]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className={`px-6 py-4 ${guest.brideOrGroom === 'Bride' ? 'bg-strawberry' : 'bg-space-indigo'}`}>
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="text-xl font-bold text-white">{name || '(No name)'}</h3>
+              <p className="text-white/80 text-sm mt-1">{guest.side} - {guest.brideOrGroom}'s Side</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-white/80 hover:text-white transition-colors"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Contact Info */}
+        <div className="p-6 space-y-4">
+          {/* Email */}
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Email</p>
+              {guest.email ? (
+                <a href={`mailto:${guest.email}`} className="text-blue-600 hover:underline truncate block">
+                  {guest.email}
+                </a>
+              ) : (
+                <span className="text-gray-400">Not provided</span>
+              )}
+            </div>
+          </div>
+
+          {/* Phone */}
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Phone</p>
+              {guest.phone ? (
+                <a href={`tel:${guest.phone}`} className="text-green-600 hover:underline">
+                  {guest.phone}
+                </a>
+              ) : (
+                <span className="text-gray-400">Not provided</span>
+              )}
+            </div>
+          </div>
+
+          {/* Address */}
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Address</p>
+              {guest.address ? (
+                <p className="text-gray-700">{guest.address}</p>
+              ) : (
+                <span className="text-gray-400">Not provided</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* RSVP Status */}
+        <div className="px-6 py-4 bg-gray-50 border-t border-gray-100">
+          <p className="text-xs text-gray-500 uppercase tracking-wide mb-3">RSVP Status</p>
+          <div className="grid grid-cols-4 gap-2 text-center text-xs">
+            <div>
+              <p className="text-gray-500 mb-1">S. V&H</p>
+              <RSVPBadgeCompact status={guest.saumyaVidhiHaaldi} />
+            </div>
+            <div>
+              <p className="text-gray-500 mb-1">M. V&H</p>
+              <RSVPBadgeCompact status={guest.mahekVidhiHaaldi} />
+            </div>
+            <div>
+              <p className="text-gray-500 mb-1">Wedding</p>
+              <RSVPBadgeCompact status={guest.wedding} />
+            </div>
+            <div>
+              <p className="text-gray-500 mb-1">Reception</p>
+              <RSVPBadgeCompact status={guest.reception} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RSVPBadgeCompact({ status }: { status: RSVPStatus }) {
+  const config: Record<RSVPStatus, { bg: string; label: string }> = {
+    Attending: { bg: 'bg-green-100 text-green-700', label: 'Yes' },
+    Declined: { bg: 'bg-red-100 text-crimson', label: 'No' },
+    'No Response': { bg: 'bg-slate-100 text-lavender-grey', label: '?' },
+    'Not Invited': { bg: 'bg-gray-100 text-gray-400', label: '—' },
+  };
+  const { bg, label } = config[status];
+  return <span className={`px-2 py-1 rounded-full font-medium ${bg}`}>{label}</span>;
+}
+
 interface GuestTableProps {
   guests: Guest[];
   title?: string;
@@ -21,23 +148,52 @@ interface GuestTableProps {
 }
 
 function RSVPBadge({ status, compact = false }: { status: RSVPStatus; compact?: boolean }) {
-  const colors: Record<RSVPStatus, string> = {
-    Attending: 'bg-green-100 text-green-800',
-    Declined: 'bg-red-100 text-crimson',
-    'No Response': 'bg-slate-100 text-lavender-grey',
-    'Not Invited': 'bg-gray-100 text-gray-500',
+  const config: Record<RSVPStatus, { bg: string; icon: React.ReactNode; label: string }> = {
+    Attending: {
+      bg: 'bg-green-100 text-green-700',
+      icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+        </svg>
+      ),
+      label: 'Yes',
+    },
+    Declined: {
+      bg: 'bg-red-100 text-crimson',
+      icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      ),
+      label: 'No',
+    },
+    'No Response': {
+      bg: 'bg-slate-100 text-lavender-grey',
+      icon: <span className="text-sm font-medium">?</span>,
+      label: '?',
+    },
+    'Not Invited': {
+      bg: 'bg-gray-100 text-gray-400',
+      icon: <span className="text-xs">—</span>,
+      label: '—',
+    },
   };
 
-  const shortLabels: Record<RSVPStatus, string> = {
-    Attending: 'Yes',
-    Declined: 'No',
-    'No Response': '—',
-    'Not Invited': 'N/A',
-  };
+  const { bg, icon, label } = config[status];
 
+  // Icon-only mode for table cells
+  if (!compact) {
+    return (
+      <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full ${bg}`} title={status}>
+        {icon}
+      </span>
+    );
+  }
+
+  // Compact text mode for mobile cards
   return (
-    <span className={`px-2 py-1 text-xs rounded-full font-medium ${colors[status]}`}>
-      {compact ? shortLabels[status] : status}
+    <span className={`px-2 py-1 text-xs rounded-full font-medium ${bg}`}>
+      {label}
     </span>
   );
 }
@@ -49,7 +205,7 @@ function GuestCard({ guest }: { guest: Guest }) {
     .join(' ');
 
   return (
-    <div className="bg-white border-b border-gray-200 p-4">
+    <div className="bg-white border-b border-gray-200 p-4 hover:bg-platinum/30 transition-colors">
       <div className="flex justify-between items-start mb-2">
         <div>
           <p className="font-medium text-space-indigo">{name || '(No name)'}</p>
@@ -79,16 +235,7 @@ function GuestCard({ guest }: { guest: Guest }) {
           <RSVPBadge status={guest.reception} compact />
         </div>
       </div>
-      {(guest.email || guest.phone) && (
-        <div className="mt-3 pt-2 border-t border-gray-100 text-xs text-gray-600">
-          {guest.email && (
-            <a href={`mailto:${guest.email}`} className="text-blue-600 block truncate">{guest.email}</a>
-          )}
-          {guest.phone && (
-            <a href={`tel:${guest.phone}`} className="text-blue-600">{guest.phone}</a>
-          )}
-        </div>
-      )}
+      <p className="text-[10px] text-gray-400 mt-2 text-center">Tap for contact info</p>
     </div>
   );
 }
@@ -98,6 +245,7 @@ export function GuestTable({ guests, title, showSearch = false, accentColor }: G
   const [grouping, setGrouping] = useState<GroupingState>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [rsvpFilter, setRsvpFilter] = useState<RSVPStatus | 'All'>('All');
+  const [selectedGuest, setSelectedGuest] = useState<Guest | null>(null);
 
   // Filter guests based on search and RSVP filter
   const filteredGuests = useMemo(() => {
@@ -153,59 +301,23 @@ export function GuestTable({ guests, title, showSearch = false, accentColor }: G
       },
       {
         accessorKey: 'saumyaVidhiHaaldi',
-        header: "Saumya's V&H",
+        header: 'S.V&H',
         cell: ({ getValue }) => <RSVPBadge status={getValue() as RSVPStatus} />,
       },
       {
         accessorKey: 'mahekVidhiHaaldi',
-        header: "Mahek's V&H",
+        header: 'M.V&H',
         cell: ({ getValue }) => <RSVPBadge status={getValue() as RSVPStatus} />,
       },
       {
         accessorKey: 'wedding',
-        header: 'Wedding',
+        header: 'Wed',
         cell: ({ getValue }) => <RSVPBadge status={getValue() as RSVPStatus} />,
       },
       {
         accessorKey: 'reception',
-        header: 'Reception',
+        header: 'Rec',
         cell: ({ getValue }) => <RSVPBadge status={getValue() as RSVPStatus} />,
-      },
-      {
-        accessorKey: 'email',
-        header: 'Email',
-        cell: ({ getValue }) => {
-          const email = getValue() as string;
-          return email ? (
-            <a href={`mailto:${email}`} className="text-blue-600 hover:underline text-xs">
-              {email}
-            </a>
-          ) : <span className="text-gray-400">—</span>;
-        },
-      },
-      {
-        accessorKey: 'phone',
-        header: 'Phone',
-        cell: ({ getValue }) => {
-          const phone = getValue() as string;
-          return phone ? (
-            <a href={`tel:${phone}`} className="text-blue-600 hover:underline text-xs">
-              {phone}
-            </a>
-          ) : <span className="text-gray-400">—</span>;
-        },
-      },
-      {
-        accessorKey: 'address',
-        header: 'Address',
-        cell: ({ getValue }) => {
-          const address = getValue() as string;
-          return address ? (
-            <span className="text-xs" title={address}>
-              {address.length > 25 ? `${address.substring(0, 25)}...` : address}
-            </span>
-          ) : <span className="text-gray-400">—</span>;
-        },
       },
     ],
     []
@@ -385,7 +497,13 @@ export function GuestTable({ guests, title, showSearch = false, accentColor }: G
           </div>
         ) : (
           paginatedGuests.map((guest, idx) => (
-            <GuestCard key={`${guest.firstName}-${guest.lastName}-${idx}`} guest={guest} />
+            <div
+              key={`${guest.firstName}-${guest.lastName}-${idx}`}
+              onClick={() => setSelectedGuest(guest)}
+              className="cursor-pointer"
+            >
+              <GuestCard guest={guest} />
+            </div>
           ))
         )}
       </div>
@@ -423,14 +541,18 @@ export function GuestTable({ guests, title, showSearch = false, accentColor }: G
               {table.getRowModel().rows.map((row) => (
                 <tr
                   key={row.id}
-                  className={`hover:bg-platinum/50 ${row.getIsGrouped() ? 'bg-gray-100 font-semibold' : ''}`}
+                  className={`hover:bg-platinum/50 cursor-pointer ${row.getIsGrouped() ? 'bg-gray-100 font-semibold' : ''}`}
+                  onClick={() => !row.getIsGrouped() && setSelectedGuest(row.original)}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="px-4 py-3 text-sm whitespace-nowrap">
                       {cell.getIsGrouped() ? (
                         <>
                           <button
-                            onClick={row.getToggleExpandedHandler()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              row.getToggleExpandedHandler()();
+                            }}
                             className="mr-2"
                           >
                             {row.getIsExpanded() ? '▼' : '▶'}
@@ -483,6 +605,11 @@ export function GuestTable({ guests, title, showSearch = false, accentColor }: G
             ))}
           </select>
         </div>
+      )}
+
+      {/* Guest Detail Modal */}
+      {selectedGuest && (
+        <GuestModal guest={selectedGuest} onClose={() => setSelectedGuest(null)} />
       )}
     </div>
   );
