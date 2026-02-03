@@ -13,11 +13,18 @@ export function FollowUpList({ guests }: FollowUpListProps) {
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterSide, setFilterSide] = useState<'All' | 'Bride' | 'Groom'>('All');
+  const [filterRelationship, setFilterRelationship] = useState<string>('All');
 
   // Get guests who haven't responded to the wedding
   const noResponseGuests = useMemo(() => {
     return guests.filter(g => g.wedding === 'No Response');
   }, [guests]);
+
+  // Get unique relationships for filter dropdown
+  const uniqueRelationships = useMemo(() => {
+    const relationships = new Set(noResponseGuests.map(g => g.side));
+    return ['All', ...Array.from(relationships).sort()];
+  }, [noResponseGuests]);
 
   // Filter and sort
   const filteredGuests = useMemo(() => {
@@ -36,6 +43,11 @@ export function FollowUpList({ guests }: FollowUpListProps) {
     // Side filter
     if (filterSide !== 'All') {
       result = result.filter(g => g.brideOrGroom === filterSide);
+    }
+
+    // Relationship filter
+    if (filterRelationship !== 'All') {
+      result = result.filter(g => g.side === filterRelationship);
     }
 
     // Sort
@@ -65,7 +77,7 @@ export function FollowUpList({ guests }: FollowUpListProps) {
     });
 
     return result;
-  }, [noResponseGuests, searchQuery, filterSide, sortField, sortDirection]);
+  }, [noResponseGuests, searchQuery, filterSide, filterRelationship, sortField, sortDirection]);
 
   // Group by relationship for summary
   const groupedByRelationship = useMemo(() => {
@@ -214,6 +226,20 @@ export function FollowUpList({ guests }: FollowUpListProps) {
                 <option value="All">All</option>
                 <option value="Bride">Bride</option>
                 <option value="Groom">Groom</option>
+              </select>
+            </div>
+
+            {/* Relationship Filter */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-600">Relationship:</label>
+              <select
+                value={filterRelationship}
+                onChange={(e) => setFilterRelationship(e.target.value)}
+                className="px-2 py-2 text-sm border border-gray-300 rounded-lg max-w-[180px]"
+              >
+                {uniqueRelationships.map(rel => (
+                  <option key={rel} value={rel}>{rel}</option>
+                ))}
               </select>
             </div>
           </div>
