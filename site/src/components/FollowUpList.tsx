@@ -131,16 +131,12 @@ export function FollowUpList({ guests }: FollowUpListProps) {
   const groomNoResponse = noResponseGuests.filter(g => g.brideOrGroom === 'Groom').length;
 
   const exportToCSV = () => {
-    const headers = ['First Name', 'Last Name', 'Side', 'Relationship', 'Email', 'Phone', 'Address'];
-    const rows = filteredGuests.map(g => [
-      g.firstName,
-      g.lastName,
-      g.brideOrGroom,
-      g.side,
-      g.email,
-      g.phone,
-      g.address,
-    ]);
+    // Only export name and phone for follow-up purposes
+    const headers = ['Name', 'Phone'];
+    const rows = filteredGuests.map(g => {
+      const name = [g.firstName, g.lastName].filter(Boolean).join(' ');
+      return [name, g.phone];
+    });
 
     // Escape double quotes in CSV cells by doubling them
     const escapeCSV = (cell: string) => `"${(cell || '').replace(/"/g, '""')}"`;

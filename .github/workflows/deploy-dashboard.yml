@@ -7,7 +7,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['site/**']
 
 permissions:
   contents: read
