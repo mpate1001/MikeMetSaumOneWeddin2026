@@ -82,6 +82,48 @@ export function SummaryCards({ stats }: SummaryCardsProps) {
           );
         })}
       </div>
+
+      {/* Wedding & Reception by Side */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {stats.sideEventStats.map((stat) => {
+          const total = stat.attending + stat.declined + stat.noResponse;
+          const responseRate = total > 0 ? ((stat.attending + stat.declined) / total * 100) : 0;
+          const isBride = stat.side === 'Bride';
+          const borderColor = isBride ? 'border-strawberry' : 'border-space-indigo';
+          const textColor = isBride ? 'text-strawberry' : 'text-space-indigo';
+
+          return (
+            <div
+              key={`${stat.event}-${stat.side}`}
+              className={`bg-white rounded-lg shadow-lg p-4 border-l-4 ${borderColor}`}
+            >
+              <p className={`text-sm font-semibold ${textColor} truncate`}>
+                {stat.event} ({stat.side})
+              </p>
+              <div className="mt-2 space-y-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-gray-500">Attending</span>
+                  <span className="text-lg font-bold text-green-600">{stat.attending}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-gray-500">Declined</span>
+                  <span className="text-lg font-bold text-crimson">{stat.declined}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-gray-500">Awaiting</span>
+                  <span className="text-lg font-bold text-lavender-grey">{stat.noResponse}</span>
+                </div>
+              </div>
+              <div className="mt-2 pt-2 border-t border-gray-100">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-gray-400">Response</span>
+                  <span className={`text-sm font-semibold ${textColor}`}>{responseRate.toFixed(0)}%</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

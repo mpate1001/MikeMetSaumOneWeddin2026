@@ -181,6 +181,23 @@ export function useGuestData() {
       groomAttending: filteredGuests.filter(g => g[key] === 'Attending' && g.brideOrGroom === 'Groom').length,
     }));
 
+    // Side-specific stats for Wedding and Reception
+    const sideEvents = [
+      { key: 'wedding' as const, name: 'Wedding' },
+      { key: 'reception' as const, name: 'Reception' },
+    ];
+    const sides: ('Bride' | 'Groom')[] = ['Bride', 'Groom'];
+
+    const sideEventStats = sideEvents.flatMap(({ key, name }) =>
+      sides.map(side => ({
+        side,
+        event: name,
+        attending: filteredGuests.filter(g => g[key] === 'Attending' && g.brideOrGroom === side).length,
+        declined: filteredGuests.filter(g => g[key] === 'Declined' && g.brideOrGroom === side).length,
+        noResponse: filteredGuests.filter(g => g[key] === 'No Response' && g.brideOrGroom === side).length,
+      }))
+    );
+
     return {
       totalGuests: filteredGuests.length,
       totalAttending: stats.attending,
@@ -190,6 +207,7 @@ export function useGuestData() {
       brideGuests: stats.brideGuests,
       groomGuests: stats.groomGuests,
       eventStats,
+      sideEventStats,
     };
   }, [filteredGuests]);
 

@@ -33,6 +33,14 @@ export interface EventStats {
   groomAttending: number;
 }
 
+export interface SideEventStats {
+  side: 'Bride' | 'Groom';
+  event: string;
+  attending: number;
+  declined: number;
+  noResponse: number;
+}
+
 export interface SummaryStats {
   totalGuests: number;
   totalAttending: number;
@@ -42,4 +50,5 @@ export interface SummaryStats {
   brideGuests: number;
   groomGuests: number;
   eventStats: EventStats[];
+  sideEventStats: SideEventStats[];
 }
