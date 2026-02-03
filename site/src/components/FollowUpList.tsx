@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import type { Guest } from '../types/guest';
 
 interface FollowUpListProps {
@@ -13,7 +13,20 @@ export function FollowUpList({ guests }: FollowUpListProps) {
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterSide, setFilterSide] = useState<'All' | 'Bride' | 'Groom'>('All');
-  const [filterRelationship, setFilterRelationship] = useState<string>('All');
+  const [selectedRelationships, setSelectedRelationships] = useState<string[]>([]);
+  const [isRelationshipDropdownOpen, setIsRelationshipDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsRelationshipDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Get guests who haven't responded to the wedding
   const noResponseGuests = useMemo(() => {
@@ -23,8 +36,20 @@ export function FollowUpList({ guests }: FollowUpListProps) {
   // Get unique relationships for filter dropdown
   const uniqueRelationships = useMemo(() => {
     const relationships = new Set(noResponseGuests.map(g => g.side));
-    return ['All', ...Array.from(relationships).sort()];
+    return Array.from(relationships).sort();
   }, [noResponseGuests]);
+
+  const toggleRelationship = (relationship: string) => {
+    setSelectedRelationships(prev =>
+      prev.includes(relationship)
+        ? prev.filter(r => r !== relationship)
+        : [...prev, relationship]
+    );
+  };
+
+  const clearRelationshipFilter = () => {
+    setSelectedRelationships([]);
+  };
 
   // Filter and sort
   const filteredGuests = useMemo(() => {
@@ -45,9 +70,9 @@ export function FollowUpList({ guests }: FollowUpListProps) {
       result = result.filter(g => g.brideOrGroom === filterSide);
     }
 
-    // Relationship filter
-    if (filterRelationship !== 'All') {
-      result = result.filter(g => g.side === filterRelationship);
+    // Relationship filter (multi-select)
+    if (selectedRelationships.length > 0) {
+      result = result.filter(g => selectedRelationships.includes(g.side));
     }
 
     // Sort
@@ -77,7 +102,7 @@ export function FollowUpList({ guests }: FollowUpListProps) {
     });
 
     return result;
-  }, [noResponseGuests, searchQuery, filterSide, filterRelationship, sortField, sortDirection]);
+  }, [noResponseGuests, searchQuery, filterSide, selectedRelationships, sortField, sortDirection]);
 
   // Group by relationship for summary
   const groupedByRelationship = useMemo(() => {
@@ -232,18 +257,60 @@ export function FollowUpList({ guests }: FollowUpListProps) {
               </select>
             </div>
 
-            {/* Relationship Filter */}
-            <div className="flex items-center gap-2">
+            {/* Relationship Filter (Multi-Select) */}
+            <div className="flex items-center gap-2 relative" ref={dropdownRef}>
               <label className="text-sm text-gray-600">Relationship:</label>
-              <select
-                value={filterRelationship}
-                onChange={(e) => setFilterRelationship(e.target.value)}
-                className="px-2 py-2 text-sm border border-gray-300 rounded-lg max-w-[180px]"
+              <button
+                onClick={() => setIsRelationshipDropdownOpen(!isRelationshipDropdownOpen)}
+                className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white min-w-[180px] text-left flex items-center justify-between gap-2 hover:border-gray-400"
               >
-                {uniqueRelationships.map(rel => (
-                  <option key={rel} value={rel}>{rel}</option>
-                ))}
-              </select>
+                <span className="truncate">
+                  {selectedRelationships.length === 0
+                    ? 'All'
+                    : selectedRelationships.length === 1
+                      ? selectedRelationships[0]
+                      : `${selectedRelationships.length} selected`}
+                </span>
+                <svg
+                  className={`w-4 h-4 text-gray-400 transition-transform ${isRelationshipDropdownOpen ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {isRelationshipDropdownOpen && (
+                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 min-w-[220px] max-h-[300px] overflow-y-auto">
+                  <div className="p-2 border-b border-gray-200 flex justify-between items-center">
+                    <span className="text-xs text-gray-500">{selectedRelationships.length} selected</span>
+                    {selectedRelationships.length > 0 && (
+                      <button
+                        onClick={clearRelationshipFilter}
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        Clear all
+                      </button>
+                    )}
+                  </div>
+                  <div className="p-1">
+                    {uniqueRelationships.map(rel => (
+                      <label
+                        key={rel}
+                        className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedRelationships.includes(rel)}
+                          onChange={() => toggleRelationship(rel)}
+                          className="w-4 h-4 rounded border-gray-300 text-space-indigo focus:ring-space-indigo"
+                        />
+                        <span className="text-sm text-gray-700">{rel}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
