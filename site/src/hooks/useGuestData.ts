@@ -6,6 +6,7 @@ type RawGuestData = Record<string, string>;
 
 function parseRSVPStatus(value: string): RSVPStatus {
   const normalized = value?.trim() || '';
+  if (normalized === '') return 'Not Invited';
   if (normalized === 'Attending') return 'Attending';
   if (normalized === 'Declined') return 'Declined';
   if (normalized === 'Not Invited') return 'Not Invited';
