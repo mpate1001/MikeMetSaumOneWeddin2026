@@ -5,7 +5,8 @@ export type TabId = 'metrics' | 'all-guests' | 'bride-side' | 'groom-side' | 'fo
 interface Tab {
   id: TabId;
   label: string;
-  shortLabel: string;
+  mobileLabel: string;
+  count?: number;
   color?: string;
 }
 
@@ -25,41 +26,45 @@ export function TabNavigation({ activeTab, onTabChange, guestCounts }: TabNaviga
     {
       id: 'metrics',
       label: 'Metrics',
-      shortLabel: 'Metrics',
+      mobileLabel: 'Metrics',
     },
     {
       id: 'all-guests',
       label: `All Guests (${guestCounts.total})`,
-      shortLabel: `All (${guestCounts.total})`,
+      mobileLabel: 'All',
+      count: guestCounts.total,
     },
     {
       id: 'bride-side',
       label: `Bride's Side (${guestCounts.bride})`,
-      shortLabel: `Bride (${guestCounts.bride})`,
+      mobileLabel: 'Bride',
+      count: guestCounts.bride,
       color: 'strawberry'
     },
     {
       id: 'groom-side',
       label: `Groom's Side (${guestCounts.groom})`,
-      shortLabel: `Groom (${guestCounts.groom})`,
+      mobileLabel: 'Groom',
+      count: guestCounts.groom,
       color: 'space-indigo'
     },
     {
       id: 'follow-up',
       label: `Follow-Up (${guestCounts.noResponse})`,
-      shortLabel: `Follow-Up (${guestCounts.noResponse})`,
+      mobileLabel: 'Follow-Up',
+      count: guestCounts.noResponse,
       color: 'amber'
     },
   ], [guestCounts]);
 
   return (
     <div className="bg-white rounded-lg shadow mb-6">
-      <nav className="flex overflow-x-auto" aria-label="Tabs">
+      <nav className="flex" aria-label="Tabs">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
 
-          // Base styles
-          let baseStyles = 'flex-1 min-w-0 px-3 py-4 text-center font-medium transition-all border-b-2 whitespace-nowrap';
+          // Base styles - equal width on all screens
+          let baseStyles = 'flex-1 min-w-0 px-1 sm:px-3 py-3 sm:py-4 text-center font-medium transition-all border-b-2';
 
           // Active/inactive styles based on tab color
           if (isActive) {
@@ -83,9 +88,15 @@ export function TabNavigation({ activeTab, onTabChange, guestCounts }: TabNaviga
               className={baseStyles}
               aria-current={isActive ? 'page' : undefined}
             >
-              {/* Show full label on md+, short label on mobile */}
+              {/* Desktop: full label inline */}
               <span className="hidden sm:inline">{tab.label}</span>
-              <span className="sm:hidden">{tab.shortLabel}</span>
+              {/* Mobile: short label with count below */}
+              <span className="sm:hidden flex flex-col items-center gap-0.5">
+                <span className="text-xs leading-tight">{tab.mobileLabel}</span>
+                {tab.count !== undefined && (
+                  <span className="text-[10px] leading-tight opacity-75">{tab.count}</span>
+                )}
+              </span>
             </button>
           );
         })}
