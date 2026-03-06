@@ -160,79 +160,63 @@ def extract_guest_info_from_modal(page: Page) -> dict:
     }
 
     try:
-        modal = page.locator('dialog, [role="dialog"]').first
-
-        # Get names using JavaScript for more reliable extraction
+        # Get names using ID-based approach (new Zola drawer UI)
+        # Input IDs: guest-0-first-name, guest-0-family-name, guest-0-suffix,
+        #            guest-1-first-name, guest-1-family-name, guest-1-suffix
         names_data = page.evaluate('''() => {
-            const modal = document.querySelector('.modal-content, dialog, [role="dialog"]');
-            if (!modal) return { all_values: [] };
+            const result = { all_values: [] };
 
-            const textboxes = modal.querySelectorAll('input[type="text"]');
-            const values = Array.from(textboxes).map(t => t.value.trim());
+            // Get primary guest name
+            const firstName = document.getElementById('guest-0-first-name');
+            const lastName = document.getElementById('guest-0-family-name');
+            const suffix = document.getElementById('guest-0-suffix');
+            result.all_values.push(
+                firstName ? firstName.value.trim() : '',
+                lastName ? lastName.value.trim() : '',
+                suffix ? suffix.value.trim() : ''
+            );
 
-            // Structure: Primary First, Primary Last, Suffix, Partner First, Partner Last, Suffix
-            return {
-                all_values: values,
-                count: values.length
-            };
+            // Get partner name
+            const partnerFirst = document.getElementById('guest-1-first-name');
+            const partnerLast = document.getElementById('guest-1-family-name');
+            const partnerSuffix = document.getElementById('guest-1-suffix');
+            if (partnerFirst) {
+                result.all_values.push('', // spacer to match old index layout
+                    partnerFirst.value.trim(),
+                    partnerLast ? partnerLast.value.trim() : '',
+                    partnerSuffix ? partnerSuffix.value.trim() : ''
+                );
+            }
+
+            result.count = result.all_values.length;
+            return result;
         }''')
 
         all_values = names_data.get('all_values', [])
         print(f"      Textbox values ({len(all_values)}): {all_values[:8]}")
 
         # Assign names based on textbox values
-        # Structure: [0]=First, [1]=Last, [2]=Suffix, [3]=empty?, [4]=Partner First, [5]=Partner Last, [6]=Suffix, [7]=empty?
         if len(all_values) >= 2:
             info['primary_first'] = all_values[0] or ''
             info['primary_last'] = all_values[1] or ''
         if len(all_values) >= 6:
-            # Partner is at indices 4 and 5
             info['partner_first'] = all_values[4] or ''
             info['partner_last'] = all_values[5] or ''
 
-        # Get relationship - the dropdown structure has:
-        # label "Relationship To You"
-        # A container with children where first child shows selected value
-        #
-        # Known relationship patterns to look for
-        relationship_patterns = [
-            "Saumya's Family Friend",
-            "Saumya's Friend",
-            "Saumya's Family",
-            "Saumya's Wedding Party",
-            "Mahek's Family Friend",
-            "Mahek's Friend",
-            "Mahek's Family",
-            "Mahek's Wedding Party",
-            "Mahek and Saumya's Friend",
-        ]
-
-        # Use JavaScript to get the relationship value and events invited to
+        # Get relationship from the select with id="add-guest-group-guest-affiliation"
+        # and events invited to from checkboxes in the drawer
         try:
             guest_data = page.evaluate('''() => {
                 const result = { relationship: '', events_invited: [] };
 
-                // Find relationship value
-                const labels = Array.from(document.querySelectorAll('label, span, div')).filter(
-                    el => el.textContent.trim() === 'Relationship To You'
-                );
-
-                for (const label of labels) {
-                    let parent = label.parentElement;
-                    if (parent) {
-                        const children = parent.querySelectorAll('*');
-                        for (const child of children) {
-                            const text = child.textContent.trim();
-                            if ((text.includes("Mahek") || text.includes("Saumya")) &&
-                                !text.includes("Relationship To You") &&
-                                !text.includes("Select...") &&
-                                text.length < 50) {
-                                result.relationship = text;
-                                break;
-                            }
-                        }
+                // Get relationship from select element
+                const relSelect = document.getElementById('add-guest-group-guest-affiliation');
+                if (relSelect) {
+                    const selected = relSelect.options[relSelect.selectedIndex];
+                    const val = selected ? selected.text.trim() : '';
+                    if (val && val !== 'Select' && val !== '') {
+                        result.relationship = val;
                     }
-                    if (result.relationship) break;
                 }
 
                 // Find events invited to (checked checkboxes)
@@ -241,7 +225,6 @@ def extract_guest_info_from_modal(page: Page) -> dict:
                     const label = cb.closest('label') || cb.parentElement;
                     const labelText = label ? label.textContent.trim() : '';
 
-                    // Check if this is an event checkbox
                     if (labelText.includes("Vidhi") || labelText.includes("Wedding") || labelText.includes("Reception")) {
                         if (cb.checked) {
                             result.events_invited.push(labelText);
@@ -253,16 +236,8 @@ def extract_guest_info_from_modal(page: Page) -> dict:
             }''')
 
             if guest_data.get('relationship'):
-                # Clean up - get just the first relationship value
-                rel_value = guest_data['relationship']
-                for pattern in relationship_patterns:
-                    if pattern in rel_value:
-                        info['relationship'] = pattern
-                        break
-                if not info['relationship'] and rel_value:
-                    info['relationship'] = rel_value.split('\n')[0].strip()
+                info['relationship'] = guest_data['relationship']
 
-            # Store events invited to
             info['events_invited'] = guest_data.get('events_invited', [])
 
         except Exception as js_err:
@@ -292,25 +267,13 @@ def extract_contact_info_from_modal(page: Page) -> dict:
     }
 
     try:
-        # Click on Contact Info & Invitations tab (li[2])
+        # Click on Mailing address tab in the drawer
         tab_clicked = page.evaluate('''() => {
-            // XPath to Contact Info tab
-            const xpath = "/html/body/div[1]/div/div/div[2]/div[1]/div/div/div/div[2]/div/div/div/form/div[1]/nav/div/ul/li[2]/a";
-            const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-            const tab = result.singleNodeValue;
-
-            if (tab) {
-                tab.click();
-                return true;
-            }
-
-            // Fallback: find by text content
-            const modal = document.querySelector('.modal-content');
-            if (!modal) return false;
-
-            const tabs = modal.querySelectorAll('nav ul li a, .tabs-label a');
+            const drawer = document.querySelector('[class*="drawerWrapper"]');
+            if (!drawer) return false;
+            const tabs = drawer.querySelectorAll('.tab');
             for (const t of tabs) {
-                if (t.textContent.trim().includes('Contact Info')) {
+                if (t.textContent.trim() === 'Mailing address') {
                     t.click();
                     return true;
                 }
@@ -320,9 +283,9 @@ def extract_contact_info_from_modal(page: Page) -> dict:
 
         if tab_clicked:
             page.wait_for_timeout(500)
-            print(f"      Clicked Contact Info tab")
+            print(f"      Clicked Mailing address tab")
 
-        # Extract contact information using label-based approach
+        # Extract contact information using ID-based approach (new Zola drawer UI)
         contact_data = page.evaluate('''() => {
             const result = {
                 email: '',
@@ -335,110 +298,45 @@ def extract_contact_info_from_modal(page: Page) -> dict:
                 country: ''
             };
 
-            // Helper to find input value by label text
-            function getInputByLabel(labelText) {
-                const labels = Array.from(document.querySelectorAll('label, span, div'));
-                for (const label of labels) {
-                    const labelContent = label.textContent.trim().toUpperCase();
-                    // Must be exact match (not just contains) to avoid EMAIL matching when looking for MOBILE
-                    if (labelContent === labelText.toUpperCase() ||
-                        labelContent === labelText.toUpperCase() + ':') {
-                        // Look for input in same container or next sibling
-                        const parent = label.closest('.form-group') || label.parentElement;
-                        if (parent) {
-                            // Get all inputs in parent and find the one closest to/after this label
-                            const inputs = parent.querySelectorAll('input[type="text"], input[type="email"], input[type="tel"]');
-                            for (const input of inputs) {
-                                // Make sure we're getting the right input (not one for a different label)
-                                const inputName = (input.name || '').toLowerCase();
-                                const inputPlaceholder = (input.placeholder || '').toLowerCase();
+            // Get fields by their IDs (new Zola drawer structure)
+            const emailInput = document.getElementById('email_address');
+            if (emailInput) result.email = emailInput.value.trim();
 
-                                // For MOBILE, look for input with mobile/phone in name
-                                if (labelText.toUpperCase() === 'MOBILE') {
-                                    if (inputName.includes('mobile') || inputName.includes('phone') ||
-                                        inputPlaceholder.includes('mobile') || inputPlaceholder.includes('phone')) {
-                                        return input.value.trim();
-                                    }
-                                }
-                                // For EMAIL, look for input with email in name or type
-                                else if (labelText.toUpperCase() === 'EMAIL') {
-                                    if (inputName.includes('email') || input.type === 'email' ||
-                                        inputPlaceholder.includes('email')) {
-                                        return input.value.trim();
-                                    }
-                                }
-                                // For other fields, return first input found
-                                else {
-                                    return input.value.trim();
-                                }
-                            }
-                        }
-                        // Check next sibling
-                        const nextInput = label.nextElementSibling;
-                        if (nextInput && nextInput.tagName === 'INPUT') {
-                            return nextInput.value.trim();
-                        }
-                    }
-                }
-                return '';
+            const phoneInput = document.getElementById('mobile_phone');
+            if (phoneInput) result.phone = phoneInput.value.trim();
+
+            const streetInput = document.getElementById('address-street-1');
+            if (streetInput) result.streetAddress = streetInput.value.trim();
+
+            const aptInput = document.getElementById('address-street-2');
+            if (aptInput) result.apt = aptInput.value.trim();
+
+            const cityInput = document.getElementById('address-city');
+            if (cityInput) result.city = cityInput.value.trim();
+
+            const stateSelect = document.getElementById('address-state-province');
+            if (stateSelect) {
+                const selected = stateSelect.options[stateSelect.selectedIndex];
+                const val = selected ? selected.text.trim() : '';
+                if (val && val !== 'Please select') result.state = val;
             }
 
-            // Helper to find select value by label text
-            function getSelectByLabel(labelText) {
-                const labels = Array.from(document.querySelectorAll('label, span, div'));
-                for (const label of labels) {
-                    if (label.textContent.trim().toUpperCase() === labelText.toUpperCase()) {
-                        const parent = label.closest('.form-group') || label.parentElement;
-                        if (parent) {
-                            const select = parent.querySelector('select');
-                            if (select) {
-                                const selectedOption = select.options[select.selectedIndex];
-                                const value = selectedOption ? selectedOption.text.trim() : '';
-                                // Ignore placeholder values
-                                if (value && value !== 'Select...' && value !== 'Select') {
-                                    return value;
-                                }
-                            }
-                        }
-                    }
-                }
-                return '';
+            const zipInput = document.getElementById('address-postal-code');
+            if (zipInput) result.zipCode = zipInput.value.trim();
+
+            const countrySelect = document.getElementById('address-country-code');
+            if (countrySelect) {
+                const selected = countrySelect.options[countrySelect.selectedIndex];
+                const val = selected ? selected.text.trim() : '';
+                if (val && val !== 'Please select') result.country = val;
             }
 
-            // Get email and mobile
-            result.email = getInputByLabel('EMAIL');
-            result.phone = getInputByLabel('MOBILE');
-
-            // If phone still not found or looks like email, search more specifically
-            if (!result.phone || result.phone.includes('@')) {
-                const inputs = document.querySelectorAll('input');
-                for (const input of inputs) {
-                    const name = (input.name || '').toLowerCase();
-                    const value = input.value.trim();
-                    // Look for mobile/phone input that contains digits (not email)
-                    if ((name.includes('mobile') || name.includes('phone')) &&
-                        value && !value.includes('@') && /\d/.test(value)) {
-                        result.phone = value;
-                        break;
-                    }
-                }
-            }
-
-            // Get address components
-            result.streetAddress = getInputByLabel('STREET ADDRESS');
-            result.apt = getInputByLabel('APT / FLOOR');
-            result.city = getInputByLabel('CITY');
-            result.state = getSelectByLabel('STATE');
-            result.zipCode = getInputByLabel('ZIP CODE');
-            result.country = getSelectByLabel('COUNTRY');
-
-            // If label approach didn't work, try by input name/placeholder
+            // Fallback: try by input name if IDs didn't work
             if (!result.email || !result.phone) {
                 const inputs = document.querySelectorAll('input');
                 for (const input of inputs) {
                     const name = (input.name || '').toLowerCase();
                     const value = input.value.trim();
-
                     if (!result.email && name.includes('email') && value) {
                         result.email = value;
                     }
@@ -503,51 +401,37 @@ def extract_contact_info_from_modal(page: Page) -> dict:
 
 def extract_rsvp_from_modal(page: Page) -> dict:
     """
-    Extract RSVP status AND person names from the RSVP Status tab.
+    Extract RSVP status AND person names from the RSVPs tab.
 
-    Based on user-provided HTML structure, the RSVP tab has accordion sections:
-    <div class="accordion-section selected">
-      <h4 role="button"><span>Saumya's Vidhi &amp; Haaldi</span>...</h4>
-      <div class="accordion-body">
-        <p class="form-control-static">1. Vallabhdas Acharya</p>
-        <select name="guests[0].event_invitations[...].rsvp_type" class="form-control">...</select>
-        <p class="form-control-static">2. Kishanpyari Acharya</p>
-        <select>...</select>
-        <p class="form-control-static">3. Harikrishna Acharya</p>
-        <select>...</select>
-        <p class="form-control-static">4. Vandan Acharya</p>
-        <select>...</select>
-      </div>
-    </div>
-
-    We extract BOTH the names and their RSVP statuses from this tab.
+    Zola's drawer UI uses eventSection divs with:
+    - h3.eventTitle for the event name
+    - div.rsvpRow for each person, containing:
+      - p.guestName with the person's name
+      - div.rsvpDropdownWrapper containing a <select> with RSVP status
     """
     rsvp_data = {
         'all_statuses': [],
         'events_found': [],
-        'people': [],  # List of person names from RSVP tab
-        'person_statuses': {},  # {person_name: {event: status}}
+        'people': [],
+        'person_statuses': {},
     }
 
     try:
-        # Extract names and statuses from accordion sections
-        accordion_data = page.evaluate(r'''() => {
+        rsvp_result = page.evaluate(r'''() => {
             const result = {
-                accordion_found: false,
+                events_found: false,
                 events: [],
                 people: [],
                 person_statuses: {},
                 all_statuses: []
             };
 
-            // Status value mapping
             const statusMap = {
                 'NO_RESPONSE': 'No Response',
                 'ATTENDING': 'Attending',
                 'DECLINED': 'Declined'
             };
 
-            // Known event names to search for
             const eventNames = [
                 "Mahek's Vidhi & Haaldi",
                 "Saumya's Vidhi & Haaldi",
@@ -555,20 +439,16 @@ def extract_rsvp_from_modal(page: Page) -> dict:
                 "Reception"
             ];
 
-            // Find accordion sections
-            const accordionSections = document.querySelectorAll('.accordion-section');
-            result.accordion_found = accordionSections.length > 0;
+            const eventSections = document.querySelectorAll('[class*="eventSection"]');
+            result.events_found = eventSections.length > 0;
 
-            // Process each accordion section (each event)
-            for (const section of accordionSections) {
-                // Get event name from h4 span
-                const headerSpan = section.querySelector('h4 span');
-                if (!headerSpan) continue;
+            for (const section of eventSections) {
+                const titleEl = section.querySelector('[class*="eventTitle"]');
+                if (!titleEl) continue;
 
-                let eventName = headerSpan.textContent.trim();
+                let eventName = titleEl.textContent.trim();
                 eventName = eventName.replace(/&amp;/g, '&');
 
-                // Match to known event
                 const matchedEvent = eventNames.find(e =>
                     eventName.includes(e) || e.includes(eventName) ||
                     eventName.toLowerCase().replace(/[^a-z]/g, '').includes(
@@ -580,34 +460,26 @@ def extract_rsvp_from_modal(page: Page) -> dict:
 
                 result.events.push(matchedEvent);
 
-                // Get the accordion body with names and selects
-                const body = section.querySelector('.accordion-body');
-                if (!body) continue;
+                const rows = section.querySelectorAll('[class*="rsvpRow"]');
+                for (const row of rows) {
+                    const nameEl = row.querySelector('[class*="guestName"]');
+                    if (!nameEl) continue;
 
-                // Get all name paragraphs (e.g., "1. Vallabhdas Acharya")
-                const nameParagraphs = body.querySelectorAll('p.form-control-static');
-                const selects = body.querySelectorAll('select');
-
-                // Extract names and pair with statuses
-                for (let i = 0; i < nameParagraphs.length; i++) {
-                    let personName = nameParagraphs[i].textContent.trim();
-                    // Remove the "1. ", "2. " prefix
+                    let personName = nameEl.textContent.trim();
                     personName = personName.replace(/^\d+\.\s*/, '');
 
-                    // Add to people list if not already there
                     if (!result.people.includes(personName)) {
                         result.people.push(personName);
                     }
 
-                    // Initialize person's status map if needed
                     if (!result.person_statuses[personName]) {
                         result.person_statuses[personName] = {};
                     }
 
-                    // Get corresponding status
-                    if (i < selects.length) {
-                        const value = selects[i].value;
-                        const status = statusMap[value] || value;
+                    const select = row.querySelector('select');
+                    if (select) {
+                        const value = select.value;
+                        const status = statusMap[value] || value || 'No Response';
                         result.person_statuses[personName][matchedEvent] = status;
                         result.all_statuses.push(status);
                     }
@@ -617,16 +489,15 @@ def extract_rsvp_from_modal(page: Page) -> dict:
             return result;
         }''')
 
-        print(f"      Accordion found: {accordion_data.get('accordion_found', False)}")
-        print(f"      Events: {accordion_data.get('events', [])}")
-        print(f"      People found: {accordion_data.get('people', [])}")
-        print(f"      Total statuses: {len(accordion_data.get('all_statuses', []))}")
+        print(f"      Events found: {rsvp_result.get('events_found', False)}")
+        print(f"      Events: {rsvp_result.get('events', [])}")
+        print(f"      People found: {rsvp_result.get('people', [])}")
+        print(f"      Total statuses: {len(rsvp_result.get('all_statuses', []))}")
 
-        rsvp_data['accordion_found'] = accordion_data.get('accordion_found', False)
-        rsvp_data['events_found'] = accordion_data.get('events', [])
-        rsvp_data['people'] = accordion_data.get('people', [])
-        rsvp_data['person_statuses'] = accordion_data.get('person_statuses', {})
-        rsvp_data['all_statuses'] = accordion_data.get('all_statuses', [])
+        rsvp_data['events_found'] = rsvp_result.get('events', [])
+        rsvp_data['people'] = rsvp_result.get('people', [])
+        rsvp_data['person_statuses'] = rsvp_result.get('person_statuses', {})
+        rsvp_data['all_statuses'] = rsvp_result.get('all_statuses', [])
 
     except Exception as e:
         print(f"      Warning extracting RSVP: {e}")
@@ -653,20 +524,20 @@ def scrape_guest_from_modal(page: Page, data_dir: Path, guest_num: int) -> dict 
     }
 
     try:
-        modal = page.locator('dialog, [role="dialog"]').first
-        if modal.count() == 0:
-            print(f"      No modal found")
+        drawer = page.locator('[class*="drawerWrapper"]').first
+        if drawer.count() == 0:
+            print(f"      No drawer found")
             return None
 
         # === GUEST INFO TAB ===
         # Click Guest Info tab using JavaScript to avoid coordinate issues
         try:
             page.evaluate('''() => {
-                const modal = document.querySelector('.modal-content');
-                if (!modal) return;
-                const tabs = modal.querySelectorAll('nav ul li a, .tabs-label a');
+                const drawer = document.querySelector('[class*="drawerWrapper"]');
+                if (!drawer) return;
+                const tabs = drawer.querySelectorAll('.tab');
                 for (const tab of tabs) {
-                    if (tab.textContent.trim() === 'Guest Info') {
+                    if (tab.textContent.trim() === 'Guest info') {
                         tab.click();
                         return;
                     }
@@ -692,102 +563,46 @@ def scrape_guest_from_modal(page: Page, data_dir: Path, guest_num: int) -> dict 
         result['address'] = contact_info.get('address', '')
 
         # === RSVP STATUS TAB ===
-        # Use XPath provided by user to click the RSVP Status tab
-        # XPath: /html/body/div[1]/div/div/div[2]/div[1]/div/div/div/div[2]/div/div/div/form/div[1]/nav/div/ul/li[3]/a
         rsvp_tab_clicked = False
 
-        # Method 1: Try XPath click via JavaScript
         try:
             rsvp_tab_clicked = page.evaluate('''() => {
-                // XPath to RSVP Status tab
-                const xpath = "/html/body/div[1]/div/div/div[2]/div[1]/div/div/div/div[2]/div/div/div/form/div[1]/nav/div/ul/li[3]/a";
-                const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-                const tab = result.singleNodeValue;
-
-                if (tab) {
-                    tab.click();
-                    return true;
+                const drawer = document.querySelector('[class*="drawerWrapper"]');
+                if (!drawer) return false;
+                const tabs = drawer.querySelectorAll('.tab');
+                for (const tab of tabs) {
+                    if (tab.textContent.trim() === 'RSVPs') {
+                        tab.click();
+                        return true;
+                    }
                 }
                 return false;
             }''')
             if rsvp_tab_clicked:
                 page.wait_for_timeout(1000)
-                print(f"      Clicked RSVP Status tab via XPath")
-        except Exception as xpath_err:
-            print(f"      XPath click error: {str(xpath_err)[:30]}")
-
-        # Method 2: Fallback - find by text content
-        if not rsvp_tab_clicked:
-            try:
-                rsvp_tab_clicked = page.evaluate('''() => {
-                    const modal = document.querySelector('.modal-content');
-                    if (!modal) return false;
-
-                    const tabs = modal.querySelectorAll('nav ul li a, .tabs-label a');
-                    for (const tab of tabs) {
-                        if (tab.textContent.trim() === 'RSVP Status') {
-                            tab.click();
-                            return true;
-                        }
-                    }
-                    return false;
-                }''')
-                if rsvp_tab_clicked:
-                    page.wait_for_timeout(1000)
-                    print(f"      Clicked RSVP Status tab via text search")
-            except Exception as tab_err:
-                print(f"      Text search click error: {str(tab_err)[:30]}")
+                print(f"      Clicked RSVPs tab")
+        except Exception as tab_err:
+            print(f"      RSVPs tab click error: {str(tab_err)[:30]}")
 
         # === VERIFY WE'RE ON RSVP TAB ===
-        # Search for accordion sections with event spans to confirm we're on the right tab
         on_rsvp_tab = page.evaluate('''() => {
-            // Look for accordion sections with event names
-            const accordionSections = document.querySelectorAll('.accordion-section');
-            if (accordionSections.length > 0) return true;
-
-            // Look for h4 buttons with spans containing event names
-            const eventHeaders = document.querySelectorAll('h4[role="button"] span');
-            for (const span of eventHeaders) {
-                const text = span.textContent.toLowerCase();
+            const sections = document.querySelectorAll('[class*="eventSection"]');
+            if (sections.length > 0) return true;
+            const titles = document.querySelectorAll('[class*="eventTitle"]');
+            for (const t of titles) {
+                const text = t.textContent.toLowerCase();
                 if (text.includes('vidhi') || text.includes('haaldi') ||
                     text.includes('wedding') || text.includes('reception')) {
                     return true;
                 }
             }
-
-            // Also check for select elements with rsvp_type names
-            const rsvpSelects = document.querySelectorAll('select[name*="rsvp_type"]');
-            return rsvpSelects.length > 0;
+            return false;
         }''')
 
         if on_rsvp_tab:
-            print(f"      ✓ Verified on RSVP Status tab (accordion/selects found)")
+            print(f"      ✓ Verified on RSVPs tab")
         else:
-            print(f"      ⚠ Could not verify RSVP tab - may be on wrong tab")
-
-        # Expand all accordion sections by clicking event buttons
-        expanded_count = 0
-        if on_rsvp_tab:
-            try:
-                expanded_count = page.evaluate('''() => {
-                    let count = 0;
-                    // Click on accordion section headers to expand them
-                    const headers = document.querySelectorAll('.accordion-section h4[role="button"]');
-                    for (const header of headers) {
-                        // Check if section is collapsed (doesn't have 'selected' class on parent)
-                        const section = header.closest('.accordion-section');
-                        if (section && !section.classList.contains('selected')) {
-                            header.click();
-                            count++;
-                        }
-                    }
-                    return count;
-                }''')
-                page.wait_for_timeout(500)
-            except Exception as exp_err:
-                print(f"      Expand error: {str(exp_err)[:30]}")
-
-            print(f"      Expanded {expanded_count} accordion sections")
+            print(f"      ⚠ Could not verify RSVPs tab - may be on wrong tab")
 
         # Extract RSVP data from accordion sections
         rsvp_data = extract_rsvp_from_modal(page)
@@ -801,22 +616,21 @@ def scrape_guest_from_modal(page: Page, data_dir: Path, guest_num: int) -> dict 
 
 
 def close_modal(page: Page):
-    """Close the modal by clicking X using JavaScript."""
+    """Close the drawer by clicking the close button."""
     try:
-        # Use JavaScript to click the close button directly
         closed = page.evaluate('''() => {
-            // Find the modal close button
-            const closeBtn = document.querySelector('.modal-close, .modal-content button.modal-close');
+            // Find the drawer close button by data-testid
+            const closeBtn = document.querySelector('[data-testid="drawer-close"]');
             if (closeBtn) {
                 closeBtn.click();
                 return true;
             }
-            // Fallback: look for × button in modal
-            const modal = document.querySelector('.modal-content');
-            if (modal) {
-                const buttons = modal.querySelectorAll('button');
+            // Fallback: look for Close button in drawer
+            const drawer = document.querySelector('[class*="drawerWrapper"]');
+            if (drawer) {
+                const buttons = drawer.querySelectorAll('button');
                 for (const btn of buttons) {
-                    if (btn.textContent.trim() === '×') {
+                    if (btn.textContent.trim() === 'Close') {
                         btn.click();
                         return true;
                     }
@@ -837,10 +651,10 @@ def close_modal(page: Page):
 
 
 def ensure_modal_closed(page: Page):
-    """Ensure any open modal is closed before proceeding."""
+    """Ensure any open drawer is closed before proceeding."""
     try:
-        modal = page.locator('dialog, [role="dialog"]')
-        if modal.count() > 0:
+        drawer = page.locator('[class*="drawerWrapper"]')
+        if drawer.count() > 0 and drawer.first.is_visible():
             close_modal(page)
             page.wait_for_timeout(300)
     except:
@@ -922,11 +736,11 @@ def process_single_guest(
         click_target.click(timeout=5000)
         page.wait_for_timeout(click_delay)
 
-        # Verify modal opened
-        modal = page.locator('dialog, [role="dialog"]')
-        if modal.count() == 0:
+        # Verify drawer opened
+        drawer = page.locator('[class*="drawerWrapper"]')
+        if drawer.count() == 0 or not drawer.first.is_visible():
             # Try JavaScript click as fallback
-            print(f"      Modal did not open, trying JS click...")
+            print(f"      Drawer did not open, trying JS click...")
             page.wait_for_timeout(300)
             clicked = page.evaluate('''(rowIndex) => {
                 const rows = document.querySelectorAll('table tbody tr');
@@ -944,10 +758,10 @@ def process_single_guest(
                 return true;
             }''', index)
             page.wait_for_timeout(click_delay)
-            modal = page.locator('dialog, [role="dialog"]')
+            drawer = page.locator('[class*="drawerWrapper"]')
 
-        if modal.count() == 0:
-            return None, FailedGuest(index, display_name, "Modal did not open", attempt)
+        if drawer.count() == 0 or not drawer.first.is_visible():
+            return None, FailedGuest(index, display_name, "Drawer did not open", attempt)
 
         # Scrape data from modal
         result = scrape_guest_from_modal(page, data_dir, guest_num)
